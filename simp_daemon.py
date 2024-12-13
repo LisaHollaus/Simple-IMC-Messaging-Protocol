@@ -65,6 +65,7 @@ class SimpDaemon:
 
 
 
+
     def handle_message_client(self, data, addr):
         """
         Process incoming messages from the client and respond accordingly.
