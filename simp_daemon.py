@@ -1,6 +1,7 @@
 import socket
 import sys
 import simp_check_functions as check
+import threading
 from simp_protocol import *
 from simp_check_functions import *
 
@@ -19,47 +20,75 @@ class SimpDaemon:
 
         self.running = True  # Track whether the daemon is running or stopped
         self.available = True  # Track whether the daemon is busy or available (client_ip)
-        self.chat_partner = None  # IP and port of the current chat partner (if any)
-        self.current_user = None  # Username of the current user (if any)
 
-        self.chat_requests = {} # Track pending chat requests (client_ip: username)
+        self.current_user = None  # Username of the current user (if any)
+        self.chat_partner = {}  # IP and username of the current chat partner (if any) {client_ip: username}
+        self.chat_requests = {}  # Track pending chat requests {client_ip: username}
 
     def start(self):
         """
         Main loop for the daemon.
 
+        Start the daemon and run separate threads for listening to new connections
+        and handling the current chat.
+
         """
         print(f"Starting daemon at {self.daemon_ip}...")
 
-        # connection to client
-        self.connection_to_client()
+        # Create threads
+        listener_thread = threading.Thread(target=self.listen_for_client_connections, daemon=True)
+        chat_thread = threading.Thread(target=self.handle_current_chat, daemon=True)
 
-        while self.running:  # Loop until the daemon is stopped
-            data, addr = self.client_socket.recvfrom(1024)  # wait for client message
-            self.handle_message_client(data, addr)  # process the incoming message
+        # Start threads
+        listener_thread.start()
+        chat_thread.start()
 
-            # check if there any chat requests
-            # if there are chat requests, handle them and forward to the client
+        # Keep the main thread running
+       # try:
+        #    while self.running:
+         #       pass
+        #except KeyboardInterrupt:
+         #   print("\nShutting down daemon...")
+          #  self.running = False
 
-            # if there are no chat requests, tell the client that there are no chat requests
 
-
-
-    def connection_to_client(self):
+    def listen_for_client_connections(self):
         """
-        Build the connection to the client before asking for the username.
+            Listen for new connection requests on the client socket.
+
+            Build the connection to the client before asking for the username.
             1. Receive a connection request from the client (PING)
             2. Respond to the client (PONG)
             3. If the response is positive, proceed with the client setup
             4. Receive the username from the client (CONNECT)
             5. Respond to the client with a welcome message and check for pending chat requests
-        """
-        print(f"Waiting for client connection at {self.daemon_ip}:{self.port_to_client}...")
 
-        try:
-            while True:
-                data, addr = self.client_socket.recvfrom(1024) # wait for client message
-                self.handle_message_client(data, addr)  # process the incoming message and send
+        """
+        print("Listening for new connections...")
+        while self.running:
+            try:
+                data, addr = self.client_socket.recvfrom(1024)
+                self.handle_message_client(data, addr)
+            except Exception as e:
+                print(f"Error in listening for connections: {e}")
+
+    def handle_current_chat(self):
+        """
+        Handle the current chat session with the client.
+        """
+        while self.running:
+            if self.chat_partner:
+                try:
+                    # Receive and forward chat messages
+
+                    # Forward message to chat partner
+                    pass
+
+                except Exception as e:
+                    print(f"Error in chat handling: {e}")
+            else:
+                # No active chat; yield CPU
+                threading.Event().wait(0.5)  # Sleep for 0.5 seconds
 
 
 
@@ -81,15 +110,21 @@ class SimpDaemon:
 
         elif operation == "CONNECT":
             self.current_user = payload
+            print("User connected: ", self.current_user)
 
             # check if there are any pending chat requests
             if len(self.chat_requests) > 0:
-                response = self.get_requests()
+                response = self._get_requests(addr)
             else:
-                response = f"CONNECT|Welcome, {self.current_user}! You currently have no pending chat requests.
+                response = f"CONNECT|Welcome, {self.current_user}! You currently have no pending chat requests."
 
         elif operation == "CHAT":
-            pass
+            if not payload:  # empty payload = waiting for chat partner
+                self.wait_for_chat_partner(addr)
+            else:
+                pass
+
+
 
         elif operation == "QUIT":
             self.available = True
@@ -107,7 +142,7 @@ class SimpDaemon:
         self.client_socket.sendto(message.encode('ascii'), addr)
 
 
-    def get_requests(self, addr):
+    def _get_requests(self, addr):
         """
         Get the list of pending chat requests.
         """
@@ -126,18 +161,27 @@ class SimpDaemon:
 
             if response[0] == "CONNECT":
                 if response[1].upper() == "NO":
-                    return "CONNECT|" # continue with the client setup
+                    return "CONNECTING|"  # continue with the client setup
                 elif response[1] in self.chat_requests.values():
                     # connect to the chat partner
-                    # skip forward to the chat setup
+                    ip = [ip for ip, user in self.chat_requests.items() if user == response[1]][0]  # get the IP
+                    self.chat_partner = {ip: response[1]}  # set the chat partner
+
                     # remove the chat request from the list
-                    # return?
-                    # get out of this loop and into the chat partner setup
-                    pass # placeholder
+                    self.chat_requests.pop(ip)
+                    return f"CONNECTING|connecting to user:{response[1]}... "
+
             response = "ERROR|Invalid response. Please enter a valid username or 'NO'."
 
 
-
+    def wait_for_chat_partner(self, addr):
+        """
+        Wait for incoming chat requests from other users.
+        """
+        pass
+        # wait for SYN datagram from the other daemon
+        # if received, send a SYN+ACK datagram to the other daemon
+        # if the other daemon responds with ACK, start the chat
 
 
 
@@ -179,19 +223,24 @@ class SimpDaemon:
         """
         self.socket.sendto(datagram, addr)
 
-    def stop(self):
+    #def stop(self):
         """
         Stop the daemon gracefully.
         """
-        print("Shutting down daemon...")
-        self.socket.close()
+     #   print("Shutting down daemon...")
+      #  self.socket.close()
 
 
 
-# callable from command line: python simp_daemon.py 192.168.1.1
+
+def show_usage():
+    print("Usage: python simp_daemon.py <IP address>")
+
+
+# callable from command line example: python simp_daemon.py 127.0.0.1 (or any other IP address)
 if __name__ == "__main__":
     if len(sys.argv) != 2:
-        print("Usage: python simp_daemon.py <IP address>")
+        show_usage()
         exit(1)
 
     daemon_ip = sys.argv[1]

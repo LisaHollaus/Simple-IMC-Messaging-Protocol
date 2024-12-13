@@ -26,8 +26,7 @@ class Client:
             self._send_message(message)
 
             # 2. Receive a response from the daemon (PONG)
-            data, addr = self.socket.recvfrom(1024)
-            response = data.decode('ascii').split('|')
+            response = self._receive_chat()
             if response[0] == "PONG":
                 print(f"Connected to daemon at {self.daemon_ip}.")
             else:
@@ -38,14 +37,20 @@ class Client:
             self.username = input("Enter your username: ")
             message = f"CONNECT|{self.username}"
             self._send_message(message)
-            data, addr = self.socket.recvfrom(1024)
-            response = data.decode('ascii').split('|')
-            print(response[1])  # Print welcome message
+
+            response = self._receive_chat()  # Wait for the welcome message
+            print(response[1])  # Print welcome message and pending chat requests
+            if response[1] == f"Welcome, {self.username}! You currently have no pending chat requests.":
+                return response
+            else:
+                while response[0] != "CONNECTING":
+                    response = self._receive_chat()
+                    print(response[1])  # Print welcome message and pending chat requests
+            return response
 
         except Exception as e:
             print(f"Error: {e}")
             exit(1)
-
 
 
     def _send_message(self, message):
@@ -57,17 +62,24 @@ class Client:
 
 
 
-
     def start(self):
         """
         Entry point for the client to interact with the user.
         """
-        self.connect_to_daemon()  # Connect to the daemon before starting
+        response = self.connect_to_daemon()  # Connect to the daemon before starting
 
-        # Daemon response:
-        # info about pending chat requests
-        # if no requests are pending, the client can choose to start a chat or wait for a chat request
+        # If the user hasn't started a chat yet, provide options to start or wait:
+        if response[1] == f"Welcome, {self.username}! You currently have no pending chat requests." or response == "CONNECTING|":  # not accepted requests
+            self.options()
+        else:
+            self.start_chat()
 
+
+
+    def options(self):
+        """
+        Provide the user with options to start a chat, wait for a chat, or quit.
+        """
         while True:
             print("\nWhat now? \n(1) Start Chat \n(2) Wait for Chat \n(q) Quit")
             choice = input("Choose an option: ")
@@ -77,12 +89,8 @@ class Client:
                 self.wait_for_chat()
             elif choice == 'q':
                 self.quit()
-                break
-
-
-
-
-
+            else:
+                print("Invalid choice. Try again.")
 
 
     def start_chat(self):
@@ -90,7 +98,17 @@ class Client:
         Initiate a chat request with another user.
         """
         target_ip = input("Enter the target user's IP address: ")
-        # Placeholder: Logic to send a chat request to the target user
+        self._send_message(f"CHAT|request: {target_ip}")  # Send a chat request to the daemon
+
+        print(f"Chat request sent!"
+              f"Waiting for response from {target_ip}...")
+        response = self._receive_chat()
+
+        # Wait for the chat to start
+        while response[0] != "QUIT":
+            response = self._receive_chat()
+            print(response[1])
+
 
         # Example: Send a SYN datagram to the daemon
         # datagram = create_datagram(0x01, 0x02, self.username, "")
@@ -101,9 +119,21 @@ class Client:
         """
         Wait for incoming chat requests from other users.
         """
+        # inform daemon that client is waiting for chat requests
+        message = "CHAT|"
+        self._send_message(message)
+
         print("Waiting for incoming chat requests...")
-        # Placeholder: Logic to receive and process incoming requests
-        # Example: Receive SYN, respond with SYN+ACK
+        response = self._receive_chat()
+
+    def _receive_chat(self):
+        """
+        Receive chat messages from the daemon and format it to a list.
+        """
+        data, addr = self.socket.recvfrom(1024)
+        response = data.decode('ascii').split('|')
+        return response
+
 
     def quit(self):
         """
@@ -111,13 +141,26 @@ class Client:
         """
         print("Disconnecting from the daemon...")
         # Notify daemon of client disconnect
+        message = "QUIT|"
+        self._send_message(message)
+
+        # receive conformation from daemon
+        response = self._receive_chat()
+        print(response[1])  # Print the disconnect message
+
         self.socket.close()
+        print("Disconnected. Exiting...")
+        exit(0)
 
 
+def show_usage():
+    print("Usage: python simp_client.py <daemon IP>")
 
+
+# callable from command line example: python simp_client.py 127.0.0.1 (or any other IP address)
 if __name__ == "__main__":
     if len(sys.argv) != 2:
-        print("Usage: python simp_client.py <daemon IP>")
+        show_usage()
         exit(1)
 
     daemon_ip = sys.argv[1]
