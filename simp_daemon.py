@@ -13,6 +13,7 @@ class SimpDaemon:
         self.port_to_daemon = 7777  # Port for communication with other daemons
         self.port_to_client = 7778  # Port for communication with clients
 
+        # Initialize the socket for communication with a client
         self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)  # UDP socket
         self.client_socket.bind((self.daemon_ip, self.port_to_client))
 
@@ -21,24 +22,44 @@ class SimpDaemon:
         self.chat_partner = None  # IP and port of the current chat partner (if any)
         self.current_user = None  # Username of the current user (if any)
 
+        self.chat_requests = {} # Track pending chat requests (client_ip: username)
+
     def start(self):
         """
-        Start the daemon and wait for incoming connections.
+        Main loop for the daemon.
+
         """
         print(f"Starting daemon at {self.daemon_ip}...")
-        self.handle_client()
 
-    def handle_client(self):
-        """
-        Handles communication with one client on port 7778.
-            - Build and run the client connection
-        """
-
-        print(f"Waiting for client connection at {self.daemon_ip}:{self.port_to_client}...")
+        # connection to client
+        self.connection_to_client()
 
         while self.running:  # Loop until the daemon is stopped
             data, addr = self.client_socket.recvfrom(1024)  # wait for client message
             self.handle_message_client(data, addr)  # process the incoming message
+
+            # check if there any chat requests
+            # if there are chat requests, handle them and forward to the client
+
+            # if there are no chat requests, tell the client that there are no chat requests
+
+
+
+    def connection_to_client(self):
+        """
+        Build the connection to the client before asking for the username.
+            1. Receive a connection request from the client (PING)
+            2. Respond to the client (PONG)
+            3. If the response is positive, proceed with the client setup
+            4. Receive the username from the client (CONNECT)
+            5. Respond to the client with a welcome message and check for pending chat requests
+        """
+        print(f"Waiting for client connection at {self.daemon_ip}:{self.port_to_client}...")
+
+        try:
+            while True:
+                data, addr = self.client_socket.recvfrom(1024) # wait for client message
+                self.handle_message_client(data, addr)  # process the incoming message and send
 
 
 
@@ -58,12 +79,15 @@ class SimpDaemon:
             else:
                 self.available = False
                 response = "PONG|Daemon is running."
-            self._send_message_client(response, addr)
 
         elif operation == "CONNECT":
             self.current_user = payload
-            response = f"CONNECTED|Welcome, {self.current_user}!"
-            self._send_message_client(response, addr)
+
+            # check if there are any pending chat requests
+            if len(self.chat_requests) > 0:
+                response = self.get_requests()
+            else:
+                response = f"CONNECT|Welcome, {self.current_user}! You currently have no pending chat requests.
 
         elif operation == "CHAT":
             pass
@@ -72,17 +96,47 @@ class SimpDaemon:
             self.available = True
             self.current_user = None
             response = "QUIT|You have been disconnected."
-            self._send_message_client(response, addr)
-
         else:
             response = "ERROR|Unknown operation."
-            self._send_message_client(response, addr)
+
+        self._send_message_client(response, addr)
 
     def _send_message_client(self, message, addr):
         """
         Send a message to the client.
         """
         self.client_socket.sendto(message.encode('ascii'), addr)
+
+
+    def get_requests(self, addr):
+        """
+        Get the list of pending chat requests.
+        """
+        requests = f"CONNECT|Welcome, {self.current_user}! You have pending chat requests from:\n"
+        for client_ip, username in self.chat_requests.items():
+            requests += f"IP: {client_ip} | Username: {username}\n"
+
+        # send the list of pending chat requests to the client
+        requests += "Would you like to chat with any of these users? \nEnter username or 'NO'."
+        self._send_message_client(requests, addr)
+
+        # receive the response from the client (CHAT|username) or (CHAT|NO)
+        while True:
+            data, addr = self.client_socket.recvfrom(1024)
+            response = data.decode('ascii').split('|')
+
+            if response[0] == "CONNECT":
+                if response[1].upper() == "NO":
+                    return "CONNECT|" # continue with the client setup
+                elif response[1] in self.chat_requests.values():
+                    # connect to the chat partner
+                    # skip forward to the chat setup
+                    # remove the chat request from the list
+                    # return?
+                    # get out of this loop and into the chat partner setup
+                    pass # placeholder
+            response = "ERROR|Invalid response. Please enter a valid username or 'NO'."
+
 
 
 

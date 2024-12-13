@@ -64,6 +64,10 @@ class Client:
         """
         self.connect_to_daemon()  # Connect to the daemon before starting
 
+        # Daemon response:
+        # info about pending chat requests
+        # if no requests are pending, the client can choose to start a chat or wait for a chat request
+
         while True:
             print("\nWhat now? \n(1) Start Chat \n(2) Wait for Chat \n(q) Quit")
             choice = input("Choose an option: ")
@@ -74,6 +78,10 @@ class Client:
             elif choice == 'q':
                 self.quit()
                 break
+
+
+
+
 
 
 
