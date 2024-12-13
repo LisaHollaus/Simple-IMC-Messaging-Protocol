@@ -93,6 +93,15 @@ class SimpProtocol:
         seq_num = int(message[2])  # 00 or 01
 
 
+    def get_payload_size(self, message):
+        """
+            Extracts the payload size from the message
+            :param message: The received message
+            :return: The payload size
+        """
+        payload_size = message[1:MAX_HEADER_SIZE]
+        return int.from_bytes(payload_size, byteorder='big')
+
 
 class HeaderType(Enum):
     CONTROL = 1
@@ -136,6 +145,8 @@ class ErrorCode(Enum):
     MESSAGE_TOO_LONG = 3
     UNKNOWN_MESSAGE = 4
     WRONG_PAYLOAD = 5
+    INVALID_USER = 6
+    INVALID_OPERATION = 7
 
 
 class HeaderInfo:
@@ -159,4 +170,5 @@ class SeqNum:
             return int(0).to_bytes(1, byteorder='big')
         elif self == SeqNum.SEQ_1:
             return int(1).to_bytes(1, byteorder='big')
+
 
