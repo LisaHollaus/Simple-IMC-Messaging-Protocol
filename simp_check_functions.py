@@ -1,7 +1,5 @@
 import ipaddress
-from simp_protocol import (HeaderInfo, ErrorCode, HeaderType, SimpProtocol, INT_PAYLOAD_SIZE,
-                           MAX_HEADER_SIZE,
-                           MAX_STRING_PAYLOAD_SIZE, FLOAT_PAYLOAD_SIZE)
+from simp_protocol import *
 
 # Create an instance of SimpProtocol
 protocol = SimpProtocol()
@@ -74,31 +72,30 @@ def check_header(message: bytes) -> HeaderInfo:
         header_info.code = ErrorCode.INVALID_USER
         return header_info
 
-    payload_size = protocol.get_payload_size(message) # validate and get the payload size
+    payload_size = protocol.get_payload_size(message)  # validate and get the payload size
     if header_info.type is HeaderType.CONTROL:
         if payload_size != INT_PAYLOAD_SIZE:
             header_info.code = ErrorCode.TYPE_MISMATCH
             return header_info
     elif header_info.type is HeaderType.CHAT:
-        if payload_size == 0: # check if the payload is too short
+        if payload_size == 0:  # check if the payload is too short
             header_info.code = ErrorCode.MESSAGE_TOO_SHORT
             return header_info
-        elif payload_size > MAX_STRING_PAYLOAD_SIZE: # check if the payload is too long
+        elif payload_size > MAX_STRING_PAYLOAD_SIZE:  # check if the payload is too long
             header_info.code = ErrorCode.MESSAGE_TOO_LONG
             return header_info
 
-    payload = message[MAX_HEADER_SIZE:] # get the payload
+    payload = message[MAX_HEADER_SIZE:]  # get the payload
     if len(payload) != payload_size:
-        header_info.code = ErrorCode.WRONG_PAYLOAD # check if the payload is correct
+        header_info.code = ErrorCode.WRONG_PAYLOAD  # check if the payload is correct
         return header_info
 
     received_checksum = int.from_bytes(message[-2:], byteorder='big') # get the received checksum
     calculated_checksum = calculate_checksum16(payload)
-    if received_checksum != calculated_checksum: # check if the checksum is correct
+    if received_checksum != calculated_checksum:  # check if the checksum is correct
         header_info.code = ErrorCode.WRONG_PAYLOAD
         return header_info
-
-    header_info.code = ErrorCode.OK # if all checks are passed, return OK
+    header_info.code = ErrorCode.OK  # if all checks are passed, return OK
     header_info.is_ok = True
     return header_info
 

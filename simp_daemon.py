@@ -18,6 +18,9 @@ class SimpDaemon:
         self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)  # UDP socket
         self.client_socket.bind((self.daemon_ip, self.port_to_client))
 
+        self.daemon_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)  # UDP socket
+        self.daemon_socket.bind((self.daemon_ip, self.port_to_daemon))
+
         self.running = True  # Track whether the daemon is running or stopped
         self.available = True  # Track whether the daemon is busy or available (client_ip)
 
@@ -38,18 +41,19 @@ class SimpDaemon:
         # Create threads
         listener_thread = threading.Thread(target=self.listen_for_client_connections, daemon=True)
         chat_thread = threading.Thread(target=self.handle_current_chat, daemon=True)
+        daemon_thread = threading.Thread(target=self.listen_to_daemons, daemon=True)
 
         # Start threads
         listener_thread.start()
         chat_thread.start()
+        daemon_thread.start()
 
         # Keep the main thread running
-       # try:
-        #    while self.running:
-         #       pass
-        #except KeyboardInterrupt:
-         #   print("\nShutting down daemon...")
-          #  self.running = False
+        try:
+            while self.running:
+                pass
+        except KeyboardInterrupt:
+            self.stop()  # shutting down the daemon
 
 
     def listen_for_client_connections(self):
@@ -183,23 +187,32 @@ class SimpDaemon:
         # if received, send a SYN+ACK datagram to the other daemon
         # if the other daemon responds with ACK, start the chat
 
-
-
-
-    def handle_daemon(self):
+    def receive_datagram(self):
         """
-        Handles communication with other daemons on port 7777.
+        Receive a datagram from the client.
+        Check if the datagram is valid.
+        Return datagram if valid, False otherwise
         """
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
-            sock.bind((self.daemon_ip, self.port_to_daemon))
-            while self.running:
-                data, addr = sock.recvfrom(1024)
-        # build and run daemon connection
+        # wait for incoming datagrams
+        data, addr = self.daemon_socket.recvfrom(1024)
 
+        # check if the datagram is valid
+        header_info = check_header(data)
 
+        if not header_info.is_ok:
+            print(f"Error parsing datagram from {addr}: {header_info.code}")
+            error_response = protocol.create_datagram(
+                header_info,  # Header info
+                HeaderType.CONTROL,
+                Operation.ERR,
+                0,  # Sequence number
+                f"Daemon {daemon_ip}",  # User
+                header_info.code  # Error message
+            )
+            self.daemon_socket.sendto(error_response, addr)
+            return False
 
-
-
+        return header_info, data, addr
 
 
     def handle_message(self, data, addr):
@@ -210,12 +223,58 @@ class SimpDaemon:
         # Example: datagram_type, operation, user, payload = parse_datagram(data)
 
         # Logic for handling chat requests, errors, or termination
-        if self.state == "available":
+        if self.available:
             print(f"Received chat request from {addr}")
             # Example: Respond with SYN+ACK
-        elif self.state == "busy":
+
+        else:
             print(f"Busy; rejecting request from {addr}")
-            # Example: Respond with ERR + FIN
+            # Respond with ERR + FIN
+            response_type = HeaderType.CONTROL
+
+
+
+
+    def listen_to_daemons(self):
+        """
+        Handles communication with other daemons on port 7777.
+        """
+        protocol = SimpProtocol()  # Create an instance of SimpProtocol
+
+        print(f"Listening for daemon communication on {self.port_to_daemon}...")
+
+        # build and run daemon connection
+        while self.running:
+            header_info, data, addr = self.receive_datagram()
+            if header_info:
+                try:
+                    # handle the message
+                    self.handle_message(data, addr)
+
+                except Exception as e:
+                    print(f"Error handling message from {addr}: {e}")
+                    error_response = protocol.create_datagram(
+                            header_info,  # Header info
+                            HeaderType.CONTROL,
+                            Operation.ERR,
+                            0,  # Sequence number
+                            f"Daemon {daemon_ip}",  # User
+                            "Error handling message"  # Error message
+                        )
+                    self.daemon_socket.sendto(error_response, addr)
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     def send_response(self, addr, datagram):
         """
@@ -223,14 +282,19 @@ class SimpDaemon:
         """
         self.socket.sendto(datagram, addr)
 
-    #def stop(self):
+
+
+
+
+
+    def stop(self):
         """
         Stop the daemon gracefully.
         """
-     #   print("Shutting down daemon...")
-      #  self.socket.close()
-
-
+        print("Shutting down daemon...")
+        self.running = False
+        self.client_socket.close()
+        self.daemon_socket.close()
 
 
 def show_usage():
