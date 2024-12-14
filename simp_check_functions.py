@@ -50,12 +50,12 @@ def check_header(message: bytes) -> HeaderInfo:
         header_info.code = ErrorCode.MESSAGE_TOO_SHORT
         return header_info
 
-    header_info.type = protocol.get_message_type(message) # validate and get the message type
+    header_info.type = protocol.get_message_type(message)  # validate and get the message type
     if header_info.type is HeaderType.UNKNOWN:
         header_info.code = ErrorCode.UNKNOWN_MESSAGE
         return header_info
 
-    operation = protocol.get_operation(message, header_info.type) # validate the operation field
+    operation = protocol.get_operation(message, header_info.type)  # validate the operation field
     if operation is None:
         header_info.code = ErrorCode.INVALID_OPERATION
         return header_info
@@ -95,6 +95,7 @@ def check_header(message: bytes) -> HeaderInfo:
     if received_checksum != calculated_checksum:  # check if the checksum is correct
         header_info.code = ErrorCode.WRONG_PAYLOAD
         return header_info
+    header_info.operation = operation
     header_info.code = ErrorCode.OK  # if all checks are passed, return OK
     header_info.is_ok = True
     return header_info

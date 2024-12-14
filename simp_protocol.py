@@ -1,5 +1,5 @@
 from enum import Enum
-
+from simp_check_functions import calculate_checksum16
 
 # change values to match the assignment
 MAX_HEADER_SIZE = 39
@@ -35,6 +35,50 @@ class ErrorCode(Enum):
     WRONG_PAYLOAD = 5
     INVALID_USER = 6
     INVALID_OPERATION = 7
+    BUSY_DAEMON = 8
+
+    def message(self):
+        if self == ErrorCode.OK:
+            return "OK"
+        elif self == ErrorCode.TYPE_MISMATCH:
+            return "Type mismatch"
+        elif self == ErrorCode.MESSAGE_TOO_SHORT:
+            return "Message too short"
+        elif self == ErrorCode.MESSAGE_TOO_LONG:
+            return "Message too long"
+        elif self == ErrorCode.UNKNOWN_MESSAGE:
+            return "Unknown message"
+        elif self == ErrorCode.WRONG_PAYLOAD:
+            return "Wrong payload"
+        elif self == ErrorCode.INVALID_USER:
+            return "Invalid user"
+        elif self == ErrorCode.INVALID_OPERATION:
+            return "Invalid operation"
+        elif self == ErrorCode.BUSY_DAEMON:
+            return "User already in another chat"
+
+
+
+class Operation(Enum):
+    CONST = 1  # for chat protocol
+    # for control protocol
+    ERR = 1
+    SYN = 2
+    ACK = 4
+    FIN = 8
+
+    def to_bytes(self):
+        if self == Operation.CONST:
+            return int(1).to_bytes(1, byteorder='big')
+        elif self == Operation.ERR:
+            return int(1).to_bytes(1, byteorder='big')
+        elif self == Operation.SYN:
+            return int(2).to_bytes(1, byteorder='big')
+        elif self == Operation.ACK:
+            return int(4).to_bytes(1, byteorder='big')
+        elif self == Operation.FIN:
+            return int(8).to_bytes(1, byteorder='big')
+
 
 
 
@@ -42,6 +86,7 @@ class ErrorCode(Enum):
 class HeaderInfo:
     is_ok = False
     type: HeaderType
+    operation: Operation
     code: ErrorCode
 
     def __init__(self):
@@ -60,6 +105,9 @@ class SimpProtocol:
         Construct a SIMP datagram.
         """
 
+        if payload.isinstance(ErrorCode):
+            payload = payload.message() # Convert error code to message ('ASCII')
+
         datagram_type = datagram_type.to_bytes(1, byteorder='big')
         operation = operation.to_bytes(1, byteorder='big')
         sequence = sequence.to_bytes(1, byteorder='big')
@@ -67,9 +115,14 @@ class SimpProtocol:
         payload = payload.encode('ascii')
         length = len(payload)
         length = length.to_bytes(4, byteorder='big')
+
         header = b''.join([datagram_type, operation, sequence, user, length, payload])
 
-        return header
+        if header_info.type == HeaderType.CHAT:
+            checksum = calculate_checksum16(payload)
+            header = b''.join([header, checksum]) # Add checksum to header
+
+        return header  # in bytes
 
     def parse_datagram(self, data):
         """
@@ -150,28 +203,6 @@ class SimpProtocol:
         payload_size = message[1:MAX_HEADER_SIZE]
         return int.from_bytes(payload_size, byteorder='big')
 
-
-
-
-class Operation(Enum):
-    CONST = 1  # for chat protocol
-    # for control protocol
-    ERR = 1
-    SYN = 2
-    ACK = 4
-    FIN = 8
-
-    def to_bytes(self):
-        if self == Operation.OK:
-            return int(0).to_bytes(1, byteorder='big')
-        elif self == Operation.ERR:
-            return int(1).to_bytes(1, byteorder='big')
-        elif self == Operation.SYN:
-            return int(2).to_bytes(1, byteorder='big')
-        elif self == Operation.ACK:
-            return int(4).to_bytes(1, byteorder='big')
-        elif self == Operation.FIN:
-            return int(8).to_bytes(1, byteorder='big')
 
 
 

@@ -11,6 +11,7 @@ class Client:
         self.daemon_port = 7778  # Default port for the daemon
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)  # UDP socket
         self.username = None  # Set during user login or setup
+        self.chat_partner = None # Set during chat setup
 
     def connect_to_daemon(self):
         """
@@ -97,23 +98,36 @@ class Client:
         """
         Initiate a chat request with another user.
         """
-        target_ip = input("Enter the target user's IP address: ")
-        self._send_message(f"CHAT|request: {target_ip}")  # Send a chat request to the daemon
+        while True:
+            target_ip = input("Enter the target user's daemon IP address: ")
+            if check.is_valid_ip(target_ip):
+                break
+            else:
+                print("Invalid IP address. Try again.")
+
+        print(f"Chat request sent to {target_ip}.")
+        self._send_message(f"CONNECTING|request: {target_ip}")  # Send a chat request to the daemon
 
         print(f"Chat request sent!"
               f"Waiting for response from {target_ip}...")
+
         response = self._receive_chat()
+        self.chat_partner = response[1].split(": ")[1]
+        print(response[1])
 
-        # Wait for the chat to start
-        while response[0] != "QUIT":
+        print("Start chatting! Type 'q' to end the chat.")
+        message = input("Enter your message: ")
+        # Chat loop
+        while response[0].upper() != "QUIT" or message.upper() != "Q":
+            message = input(f"{self.username}: ")
             response = self._receive_chat()
-            print(response[1])
+            print(f"{self.chat_partner}: {response[1]}")
+
+        print("Chat ended.")
+        self.options()
 
 
-        # Example: Send a SYN datagram to the daemon
-        # datagram = create_datagram(0x01, 0x02, self.username, "")
-        # self.socket.sendto(datagram, (target_ip, 7777))
-        print(f"Chat request sent to {target_ip}.")
+
 
     def wait_for_chat(self):
         """
@@ -132,6 +146,7 @@ class Client:
         """
         data, addr = self.socket.recvfrom(1024)
         response = data.decode('ascii').split('|')
+        #print(response[1])  # Print the chat message
         return response
 
 
