@@ -1,3 +1,34 @@
+# Final Assignment 
+#### Authors: Hollaus, Meseli
+
+## How to run the application
+### Start the daemon:
+In order to start the daemon, run the following command in the terminal:
+python simp_daemon.py <IP address>
+
+Example:
+```bash
+python simp_daemon.py 127.0.0.1
+```
+### Start the client:
+In order to start the client, run the following command in the terminal:
+python simp_client.py <daemon IP>
+
+Example:
+```bash
+python simp_client.py 127.0.0.1
+```
+
+### Connect to another client:
+
+1. Input the username of the client
+2. Create another daemon - client pair (example using 127.0.0.2)
+3. If there are other users you can connect to them, otherwise you have to wait for another user to connect to you
+4. The other user can accept or decline the connection request 
+5. If the connection request is accepted you can start chatting with the other user 
+6. quit the chat by typing q in the message field
+
+
 ### Protocol between client and daemon:
 We implemented a simple protocol between the client and the daemon, based on a simple text-based format.
 

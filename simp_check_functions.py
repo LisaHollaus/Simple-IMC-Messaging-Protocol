@@ -98,6 +98,7 @@ def check_header(message: bytes) -> HeaderInfo:
     header_info.operation = operation
     header_info.code = ErrorCode.OK  # if all checks are passed, return OK
     header_info.is_ok = True
+    header.info.sequence_number = sequence_number
     return header_info
 
     # fill out with error checks

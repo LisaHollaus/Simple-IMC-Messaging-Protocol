@@ -6,6 +6,8 @@ from simp_protocol import *
 from simp_check_functions import *
 
 class SimpDaemon:
+    protocol = SimpProtocol()  # Creating an instance of SimpProtocol to make use of the class methods
+
     def __init__(self, daemon_ip):
         """
         Initialize the daemon with the given IP and port.
@@ -27,6 +29,7 @@ class SimpDaemon:
         self.current_user = None  # Username of the current user (if any)
         self.chat_partner = {}  # IP and username of the current chat partner (if any) {client_ip: username}
         self.chat_requests = {}  # Track pending chat requests {client_ip: username}
+        self.sequence_tracker = {}  # Track expected sequence numbers for chat partners {addr: expected_sequence_number}
 
     def start(self):
         """
@@ -124,23 +127,77 @@ class SimpDaemon:
         elif operation == "CHAT":
             if self.chat_partner:
                 # forward the message to the chat partner and vise versa
-                pass
-
-
-
-
-
-
-
+                self.forward_chat_messages(payload, addr)
 
         elif operation == "QUIT":
             self.available = True
             self.current_user = None
             response = "QUIT|You have been disconnected."
+
         else:
             response = "ERROR|Unknown operation."
 
         self._send_message_client(response, addr)
+
+
+    def forward_chat_messages(self, message, client_addr):
+        """
+        Forward a chat message to the chat partner.
+        Create chat datagram and send it to the chat partner
+        Receive answer and send it back to the client
+        """
+
+        chat_partner_addr = list(self.chat_partner.keys())[0]
+        # Initial sequence number (alternate between 0 and 1 for retransmissions)
+        sequence_number = self.sequence_tracker.get(chat_partner_addr, 1)  # Default is 1
+
+        # create chat datagram
+        response = protocol.create_datagram(
+                HeaderType.CHAT,
+                Operation.CONST,
+                sequence_number,
+                f"{self.current_user}",
+                message
+            )
+
+        # send datagram and wait for ACK from the chat partner
+        while True:
+            try:
+                self.daemon_socket.settimeout(5)  # Set a timeout for the response
+                self.daemon_socket.sendto(response, chat_partner_addr)
+                print(f"Message sent to chat partner {chat_partner_addr}.")
+
+                header_info, data, addr = self.receive_datagram()  # Attempt to receive an ACK
+
+                if addr == chat_partner_addr and header_info.operation == Operation.ACK and header_info.sequence_number == sequence_number:
+                    print(f"ACK received.")
+                    self.sequence_tracker[chat_partner_addr] = 1 - sequence_number # Toggle between 0 and 1
+                    break
+                else:
+                    print(f"Unexpected response received: {header_info}, {data}")
+
+            except socket.timeout:
+                print(f"Timeout: No ACK received from {chat_partner_addr}. Retrying...")
+                self.forward_chat_messages(message, client_addr)
+                # Retransmit the same datagram (recursive call)
+
+        # wait for the response from the chat partner (stop and wait)
+        header_info, data, addr = self.receive_datagram()
+        if header_info.type == HeaderType.CHAT and header_info.operation == Operation.CONST:
+            # forward the message to the client
+            response = f"CHAT| {data['payload']}"
+
+        elif header_info.operation == Operation.FIN:
+            # close the connection
+            self.closing_connection(addr)
+            response = f"QUIT|Chat partner has disconnected."
+
+        else:
+            # forward the error message to the client
+            response = f"ERROR| {data['payload']}"
+        self.client_socket.sendto(response, client_addr)
+
+
 
     def _send_message_client(self, message, addr):
         """
@@ -183,18 +240,50 @@ class SimpDaemon:
 
     def wait_for_chat_partner(self, addr):
         """
-        Wait for incoming chat requests from other users.
+        Wait for incoming chat requests (SYN) from other users (daemon).
         """
-        pass
-        # wait for SYN datagram from the other daemon
-        # if received, send a SYN+ACK datagram to the other daemon
-        # if the other daemon responds with ACK, start the chat
+        while True:
+            # Wait to receive a datagram from another daemon
+            header_info, data, daemon_addr = self.receive_datagram()
+
+            # Check if the received datagram is a SYN
+            if header_info and header_info.operation == Operation.SYN:
+                print(f"Received SYN from {daemon_addr}.")
+
+                # Respond with a SYN+ACK
+                syn_ack_datagram = protocol.create_datagram(
+                    HeaderType.CONTROL,
+                    Operation.SYN.value | Operation.ACK.value,
+                    1,  # Sequence number
+                    f"{self.current_user}",
+                    ""  # Empty payload
+                )
+                self.daemon_socket.sendto(syn_ack_datagram, daemon_addr)
+                print(f"Sent SYN+ACK to {daemon_addr}.")
+
+                # Wait for ACK from the sender to complete the handshake
+                self.daemon_socket.settimeout(5)  # Set timeout for the response
+                try:
+                    ack_header_info, ack_data, ack_addr = self.receive_datagram()
+                    if ack_header_info.operation == Operation.ACK and ack_addr == daemon_addr:
+                        print(f"ACK received from {daemon_addr}. Handshake complete.")
+
+                        # Set the chat partner and break the loop
+                        self.chat_partner = {daemon_addr[0]: data['user']}
+                        return  # Exit the function after a successful handshake
+
+                except socket.timeout:
+                    print(f"Timeout waiting for ACK from {daemon_addr}. Restarting wait.")
+
+            else:
+                print(f"Unexpected datagram from {daemon_addr}. Ignoring...")
+
 
 
     def receive_datagram(self):
         """
         Receive a datagram from the client.
-        Check if the datagram is valid.
+        Check if the datagram is valid and the sequence number is correct.
         Return datagram if valid, False otherwise
         """
         # wait for incoming datagrams
@@ -206,11 +295,10 @@ class SimpDaemon:
         if not header_info.is_ok:
             print(f"Error parsing datagram from {addr}: {header_info.code}")
             error_response = protocol.create_datagram(
-                header_info,  # Header info
                 HeaderType.CONTROL,
                 Operation.ERR,
                 0,  # Sequence number
-                f"Daemon {daemon_ip}",  # User
+                f"{self.current_user}",  # User
                 header_info.code  # Error message
             )
             self.daemon_socket.sendto(error_response, addr)
@@ -218,6 +306,23 @@ class SimpDaemon:
 
         # Parse the datagram to extract the data and header info into a dictionary
         data = protocol.parse_datagram(data)
+
+        # Check if the sequence number is correct
+        expected_sequence = self.sequence_tracker.get(addr, 1)  # Default expected sequence is 1
+        if header_info.sequence_number != expected_sequence:
+            print(f"Unexpected sequence number from {addr}. Expected {expected_sequence}, got {header_info.sequence_number}.")
+            error_response = protocol.create_datagram(
+                HeaderType.CONTROL,
+                Operation.ERR,
+                0,
+                f"{self.current_user}",
+                "Invalid sequence number."
+            )
+            self.daemon_socket.sendto(error_response, addr)
+            return False
+
+        # Update the expected sequence number
+        self.sequence_tracker[addr] = 1 - expected_sequence  # Toggle between 0 and 1
 
         return header_info, data, addr
 
@@ -258,27 +363,30 @@ class SimpDaemon:
         """
         Perform the three-way handshake with the other daemon.
         """
-        # Step 1: Sender sends SYN
+        # 1. Prepare the SYN datagram
         print(f"Starting three-way handshake with {addr}...")
+        sequence_number = 1  # Initial sequence number
 
         syn_datagram = protocol.create_datagram(
             HeaderType.CONTROL,
             Operation.SYN,
-            1,  # Sequence number
-            f"Daemon {self.daemon_ip}",  # User
+            sequence_number,
+            f"{self.current_user}",
             ""  # Empty payload
         )
-        self.daemon_socket.sendto(syn_datagram, addr)
-        print(f"SYN sent to {addr}.")
 
-        # Step 2: Wait for SYN + ACK from the receiver
-        try:
-            self.daemon_socket.settimeout(5)  # Set a timeout for the response
-            while True:
+        # 2. Send SYN and wait for SYN + ACK from the receiver (try only 3 times to avoid infinite loop)
+        tries = 3
+        while tries > 0:
+            try:
+                self.daemon_socket.sendto(syn_datagram, addr)
+                print(f"SYN sent to {addr} with sequence {sequence_number}.")
+
+                self.daemon_socket.settimeout(5)  # Set a timeout for the response
                 header_info, data, addr = self.receive_datagram()
 
                 # If the received operation is SYN + ACK
-                if header_info and header_info.operation == (Operation.SYN.value | Operation.ACK.value):
+                if header_info and header_info.operation == (Operation.SYN.value | Operation.ACK.value) and header_info.sequence_number == sequence_number:
                     print(f"SYN+ACK received from {addr}.")
                     break
                 elif header_info and header_info.operation == Operation.ERR:
@@ -288,21 +396,26 @@ class SimpDaemon:
                     print(f"Unexpected datagram received from {addr}, resending SYN.")
                     self.daemon_socket.sendto(syn_datagram, addr)
 
-        except socket.timeout:
-            print(f"Timeout waiting for SYN+ACK from {addr}. resending SYN.")
-            # restart the handshake
-            self.three_way_handshake(addr)
+            except socket.timeout:
+                print(f"Timeout waiting for SYN+ACK from {addr}. resending SYN.")
+                # resend SYN
+                tries -= 1
 
-        # Step 3: Sender replies with ACK
+        if tries == 0:
+            print(f"Failed to establish connection with {addr}.")
+            return False, "Connection failed."
+
+        # 3. Sender replies with ACK
         ack_datagram = protocol.create_datagram(
             HeaderType.CONTROL,
             Operation.ACK,
-            1,  # Sequence number
+            sequence_number,  # Sequence number
             f"{self.current_user}",  # User
             ""  # Empty payload
         )
         self.daemon_socket.sendto(ack_datagram, addr)
         print(f"ACK sent to {addr}. Handshake complete.")
+        self.sequence_tracker[addr] = 1 - sequence_number  # Initialize expected sequence number for chat partner
 
         # set the chat partner
         self.chat_partner = {addr: data['user']}
@@ -315,11 +428,9 @@ class SimpDaemon:
         Close the connection.
         """
         # create FIN datagram
-        response_type = HeaderType.CONTROL
-        operation = Operation.FIN
         response = protocol.create_datagram(
-            response_type,
-            operation,
+            HeaderType.CONTROL,
+            Operation.FIN,
             1,  # Sequence number
             f"Daemon {daemon_ip}",  # User
             ""  # Empty payload
@@ -369,7 +480,7 @@ class SimpDaemon:
                 except Exception as e:
                     print(f"Error handling message from {addr}: {e}")
                     error_response = protocol.create_datagram(
-                            header_info,  # Header info
+                            #header_info,  # Header info
                             HeaderType.CONTROL,
                             Operation.ERR,
                             0,  # Sequence number

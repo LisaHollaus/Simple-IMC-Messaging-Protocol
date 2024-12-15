@@ -1,5 +1,4 @@
 from enum import Enum
-from simp_check_functions import calculate_checksum16
 
 # change values to match the assignment
 MAX_HEADER_SIZE = 39
@@ -88,6 +87,7 @@ class HeaderInfo:
     type: HeaderType
     operation: Operation
     code: ErrorCode
+    sequence_number: int
 
     def __init__(self):
         self.is_ok = False
@@ -100,13 +100,13 @@ class SimpProtocol:
     HEADER_FORMAT = '!BBB32sI'  # Type (1 byte), Operation (1 byte), Sequence (1 byte), User (32 bytes), Length (4 bytes)
 
 
-    def create_datagram(self, header_info, datagram_type, operation, sequence, user, payload):
+    def create_datagram(self, datagram_type, operation, sequence, user, payload):
         """
         Construct a SIMP datagram.
         """
 
         if payload.isinstance(ErrorCode):
-            payload = payload.message() # Convert error code to message ('ASCII')
+            payload = payload.message()  # Convert error code to message ('ASCII')
 
         datagram_type = datagram_type.to_bytes(1, byteorder='big')
         operation = operation.to_bytes(1, byteorder='big')
@@ -118,9 +118,9 @@ class SimpProtocol:
 
         header = b''.join([datagram_type, operation, sequence, user, length, payload])
 
-        if header_info.type == HeaderType.CHAT:
-            checksum = calculate_checksum16(payload)
-            header = b''.join([header, checksum]) # Add checksum to header
+        #if datagram_type == HeaderType.CHAT:
+       #     checksum = calculate_checksum16(payload)
+         #   header = b''.join([header, checksum]) # Add checksum to header
 
         return header  # in bytes
 
@@ -145,7 +145,7 @@ class SimpProtocol:
             "sequence": sequence,
             "user": user,
             "length": length,
-            "payload": payload.decode('ascii')
+            "payload": payload
         }
 
 

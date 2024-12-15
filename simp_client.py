@@ -121,6 +121,9 @@ class Client:
         while response[0].upper() != "QUIT" or message.upper() != "Q":
             message = input(f"{self.username}: ")
             response = self._receive_chat()
+            if response[0].upper() == "ERROR":
+                print(f"Error: {response[1]}")
+                break
             print(f"{self.chat_partner}: {response[1]}")
 
         print("Chat ended.")
