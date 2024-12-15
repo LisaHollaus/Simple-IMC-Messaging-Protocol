@@ -11,7 +11,7 @@ class Client:
         self.daemon_port = 7778  # Default port for the daemon
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)  # UDP socket
         self.username = None  # Set during user login or setup
-        self.chat_partner = None # Set during chat setup
+        self.chat_partner = None  # Set during chat setup
 
     def connect_to_daemon(self):
         """
@@ -97,9 +97,10 @@ class Client:
     def start_chat(self):
         """
         Initiate a chat request with another user.
+        Keep the chat running until one of the users decides to quit.
         """
         while True:
-            target_ip = input("Enter the target user's daemon IP address: ").strip()
+            target_ip = input("Enter the target user's daemon IP address: ")
             if is_valid_ip(target_ip):
                 break
             else:
@@ -137,11 +138,38 @@ class Client:
         Wait for incoming chat requests from other users.
         """
         # inform daemon that client is waiting for chat requests
-        message = "CHAT|"
-        self._send_message(message)
+        while True:
+            message = "CONNECTING|"
+            self._send_message(message)
 
-        print("Waiting for incoming chat requests...")
-        response = self._receive_chat()
+            print("Waiting for incoming chat requests...")
+            response = self._receive_chat()
+            print(response[1])
+
+            if response[0] == "CONNECTING":  # if there is a chat request
+                chat_request = response[1].split(": ")[1]
+                print(f"Chat request from {chat_request}")
+
+                answer = input("Do you want to accept the chat request? (y/n): ").strip()
+                if answer.upper() == "Y":
+                    self.chat_partner = chat_request
+                    self.start_chat()
+                else:
+                    continue  # back to waiting for chat requests
+
+            elif response[0] == "ERROR":
+                answer = input(f"Error: {response[1]}").strip()  # ask user if they want to continue waiting
+                if answer.upper() == "NO":
+                    message = "QUIT|"
+                    self._send_message(message)
+                    break  # back to options
+                elif answer.upper() == "YES":
+                    message = "CONNECTING|"
+                    self._send_message(message)
+                    continue
+
+
+
 
     def _receive_chat(self):
         """

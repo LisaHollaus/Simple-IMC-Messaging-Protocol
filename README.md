@@ -46,6 +46,6 @@ Each message will have a simple format: OPERATION|PAYLOAD
 - Operation: A short string to define the type of request (CONNECT, CHAT, QUIT).
 - Payload: Optional additional data (e.g., username, chat message).
 
-### Notes
+### Additional Notes on our implementation approach:
 - We added a checksum to the protocol to ensure the integrity of the messages between daemon and daemon.
-- 
+- We assumed the client knows the IP address of the users daemon he wants to connect to, so we did not implement a discovery mechanism (example: Database).
