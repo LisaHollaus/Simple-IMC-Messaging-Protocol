@@ -1,6 +1,6 @@
 import socket
 import sys
-import simp_check_functions as check
+from simp_check_functions import is_valid_ip
 
 class Client:
     def __init__(self, daemon_ip):
@@ -99,8 +99,8 @@ class Client:
         Initiate a chat request with another user.
         """
         while True:
-            target_ip = input("Enter the target user's daemon IP address: ")
-            if check.is_valid_ip(target_ip):
+            target_ip = input("Enter the target user's daemon IP address: ").strip()
+            if is_valid_ip(target_ip):
                 break
             else:
                 print("Invalid IP address. Try again.")
@@ -184,7 +184,7 @@ if __name__ == "__main__":
     daemon_ip = sys.argv[1]
 
     # Validate IP address format
-    check = check.is_valid_ip(daemon_ip)
+    check = is_valid_ip(daemon_ip)
     if not check:
         print(check)
         exit(1)
