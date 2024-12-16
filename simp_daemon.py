@@ -43,12 +43,12 @@ class SimpDaemon:
 
         # Create threads
         client_thread = threading.Thread(target=self.listen_for_client_connections, daemon=True)  # Listen for new connections
-        #chat_thread = threading.Thread(target=self.handle_current_chat, daemon=True)  # Handle the current chat session
+        chat_thread = threading.Thread(target=self.listen_for_client_connections, daemon=True)  # Handle the current chat session
         daemon_thread = threading.Thread(target=self.listen_to_daemons, daemon=True)  # Listen to other daemons and handle chat requests
 
         # Start threads
         client_thread.start()
-        #chat_thread.start()
+        chat_thread.start()
         daemon_thread.start()
 
         # Keep the main thread running
@@ -85,9 +85,11 @@ class SimpDaemon:
         """
         Process incoming messages from the client and respond accordingly.
         """
+
         message = data.decode('ascii').split('|')  # Format: OPERATION|PAYLOAD
         operation = message[0]
         payload = message[1] if len(message) > 1 else None  # Extract the payload if it exists
+        response = None
 
         if operation == "PING":
             if not self.available:
@@ -107,27 +109,28 @@ class SimpDaemon:
                 response = f"CONNECT|Welcome, {self.current_user}! You currently have no pending chat requests."
 
         elif operation == "CONNECTING":
-            if self.chat_partner:  # implies that the daemon is connected to a client
+            if not payload:
                 # empty payload = waiting for chat partner
-                if not payload:
-                    self.wait_for_chat_partner(addr)
+                self.wait_for_chat_partner(addr)
 
+            else:
+                # send chat request to the chat partner
+                target_ip = payload.split(":")[1].strip()  # "request: {target_ip}"
+
+                # try to connect to the chat partner
+                connected, msg = self.three_way_handshake(target_ip)  # return two values (bool, error/username)
+
+                if connected:
+                    response = f"CONNECTING|Connected to user: {msg}"
                 else:
-                    # send chat request to the chat partner
-                    target_ip = payload.split(":")[1].strip()  # "request: {target_ip}"
-
-                    # try to connect to the chat partner
-                    connected, msg = self.three_way_handshake(target_ip)  # return two values (bool, error/username)
-
-                    if connected:
-                        response = f"CONNECTING|Connected to user: {msg}"
-                    else:
-                        response = f"ERROR| {msg}"
+                    response = f"ERROR| {msg}"
 
         elif operation == "CHAT":
             if self.chat_partner:
                 # forward the message to the chat partner and vise versa
                 self.forward_chat_messages(payload, addr)
+            else:
+                response = "ERROR|No chat partner available."
 
         elif operation == "QUIT":
             self.available = True
@@ -235,16 +238,38 @@ class SimpDaemon:
                     self.chat_requests.pop(ip)
                     return f"CONNECTING|connecting to user:{response[1]}... "
 
-            response = "ERROR|Invalid response. Please enter a valid username or 'NO'."
+            #response = "ERROR|Invalid response. Please enter a valid username or 'NO'."
+
 
 
     def wait_for_chat_partner(self, addr):
         """
         Wait for incoming chat requests (SYN) from other users (daemon).
+        Periodically check with the user if they want to keep waiting.
         """
+        #global header_info
         while True:
-            # Wait to receive a datagram from another daemon
-            header_info, data, daemon_addr = self.receive_datagram()
+            try:
+                self.daemon_socket.settimeout(30)  # Set a timeout for the incoming chat requests
+                # Wait to receive a datagram from another daemon
+                header_info, data, daemon_addr = self.receive_datagram()
+
+            except socket.timeout:
+                print("No chat requests received.")
+                # ask the user if they want to keep waiting
+                message = "ERROR|No chat requests received. Do you want to keep waiting? (YES/NO)"
+                self._send_message_client(message, addr)
+
+                # receive the response from the client
+                data, addr = self.client_socket.recvfrom(1024)
+                response = data.decode('ascii').split('|')
+
+                if response[0] == "CONNECTING":
+                    # recall the function to wait for chat partner
+                    self.wait_for_chat_partner(addr)
+
+                elif response[0] == "QUIT":
+                    break
 
             # Check if the received datagram is a SYN
             if header_info and header_info.operation == Operation.SYN:
@@ -488,7 +513,6 @@ class SimpDaemon:
                             header_info.code  # Error message
                         )
                     self.daemon_socket.sendto(error_response, addr)
-
 
 
     def stop(self):
