@@ -1,4 +1,5 @@
 from enum import Enum
+from simp_check_functions import calculate_checksum16
 
 # change values to match the assignment
 MAX_HEADER_SIZE = 39
@@ -7,7 +8,6 @@ PAYLOAD_SIZE = 4
 MAX_STRING_PAYLOAD_SIZE = 256
 INT_PAYLOAD_SIZE = 4
 FLOAT_PAYLOAD_SIZE = 8
-
 
 
 
@@ -23,6 +23,10 @@ class HeaderType(Enum):
             return int(2).to_bytes(1, byteorder='big')
         elif self == HeaderType.UNKNOWN:
             return int(0).to_bytes(1, byteorder='big')
+
+    # suggestion for a better implementation:
+    # def to_bytes(self):
+    #     return int(self.value).to_bytes(1, byteorder='big') --> but not sure so im just commenting this for now
 
 
 class ErrorCode(Enum):
@@ -78,6 +82,9 @@ class Operation(Enum):
         elif self == Operation.FIN:
             return int(8).to_bytes(1, byteorder='big')
 
+    # same like in HeaderType
+    #    def to_bytes(self):
+    #         return self.value.to_bytes(1, byteorder='big')
 
 
 
@@ -105,24 +112,25 @@ class SimpProtocol:
         Construct a SIMP datagram.
         """
 
-        if payload.isinstance(ErrorCode):
-            payload = payload.message()  # Convert error code to message ('ASCII')
+        if payload.isinstance(payload, ErrorCode):
+            payload = payload.message().encode('ascii')  # Convert error code to ascii message
 
         datagram_type = datagram_type.to_bytes(1, byteorder='big')
         operation = operation.to_bytes(1, byteorder='big')
         sequence = sequence.to_bytes(1, byteorder='big')
         user = user.encode('ascii').ljust(32, b'\x00')  # Pad username to 32 bytes
-        payload = payload.encode('ascii')
+        payload = payload.encode('ascii') if isinstance(payload, str) else payload # Convert payload to bytes
         length = len(payload)
         length = length.to_bytes(4, byteorder='big')
 
         header = b''.join([datagram_type, operation, sequence, user, length, payload])
 
-        #if datagram_type == HeaderType.CHAT:
-       #     checksum = calculate_checksum16(payload)
-         #   header = b''.join([header, checksum]) # Add checksum to header
+        # adding checjsum to header
+        checksum = calculate_checksum16(header + payload)
+        datagram = b''.join[(header, checksum, payload)]
 
-        return header  # in bytes
+
+        return datagram
 
     def parse_datagram(self, data):
         """
@@ -130,8 +138,21 @@ class SimpProtocol:
         """
 
         header = data[:MAX_HEADER_SIZE]  # 39 bytes
-        payload = data[MAX_HEADER_SIZE:]
+        payload = data[MAX_HEADER_SIZE:-2] # this excludes checksum bytes
+        checksum_recv = data[-2:] # last 2 bytes = checksum
 
+        # recalc of checksum and verification
+        checksum_calc = calculate_checksum16(header + payload)
+        if checksum_recv != checksum_calc:
+            raise ValueError("Checksum verification failed, there's a mismatch!")
+
+
+        # validating the header
+        if not self.validate_header(header):
+            raise ValueError("Invalid header format/fields!")
+
+
+        # parsing header and payload
         datagram_type = int(header[0])
         operation = int(header[1])
         sequence = int(header[2])
@@ -148,6 +169,22 @@ class SimpProtocol:
             "payload": payload
         }
 
+
+    def validate_header(self, header):
+        """
+        Validate the header fields to ensure the message format is correct.
+        :param header: The received header (first 39 bytes of the datagram).
+        :return: True if valid, False if invalid.
+        """
+
+        # check if the header is valid: either control or chat
+        if header[0] not in (HeaderType.CONTROL.value, HeaderType.CHAT.value):
+            return False
+
+        # check if the operation is valid: either ERR, SYN, ACK, FIN, or CONST
+        operation = header[1]
+        if operation not in (Operation.ERR.value, Operation.SYN.value, Operation.ACK.value, Operation.FIN.value):
+            return False
 
 
     def get_message_type(self, message):
@@ -192,6 +229,7 @@ class SimpProtocol:
             :return: The sequence number
         """
         seq_num = int(message[2])  # 00 or 01
+        return seq_num
 
 
     def get_payload_size(self, message):
@@ -200,10 +238,8 @@ class SimpProtocol:
             :param message: The received message
             :return: The payload size
         """
-        payload_size = message[1:MAX_HEADER_SIZE]
+        payload_size = message[35:39] # extract the payload size from the header (4 bytes)
         return int.from_bytes(payload_size, byteorder='big')
-
-
 
 
 
@@ -219,3 +255,12 @@ class SeqNum:
             return int(1).to_bytes(1, byteorder='big')
 
 
+    # idk if we need it; but if yes, we need a different approach:
+    # leaving here for now as comments
+
+    #  @classmethod
+    # def from_bytes(cls, byte_data):
+        # return cls(byte_data)
+
+    # def to_bytes(self):
+        # return self.value.to_bytes(1, byteorder='big')
