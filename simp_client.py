@@ -1,6 +1,6 @@
 import socket
 import sys
-from simp_check_functions import is_valid_ip
+from simp_check_functions import *
 
 class Client:
     def __init__(self, daemon_ip):
@@ -56,9 +56,12 @@ class Client:
 
     def _send_message(self, message):
         """
-        Send a message to the daemon.
+        Send a message to the daemon, also calculate the checksum
+        and append it to the message.
         """
-        self.socket.sendto(message.encode('ascii'), (self.daemon_ip, self.daemon_port))
+        checksum = calculate_checksum16(message.encode('ascii'))
+        message_with_checksum = f"{message}|{checksum}"
+        self.socket.sendto(message_with_checksum.encode('ascii'), (self.daemon_ip, self.daemon_port))
 
 
 
@@ -69,12 +72,21 @@ class Client:
         """
         response = self.connect_to_daemon()  # Connect to the daemon before starting
 
-        # If the user hasn't started a chat yet, provide options to start or wait:
-        if response[1] == f"Welcome, {self.username}! You currently have no pending chat requests." or response == "CONNECTING|":  # not accepted requests
+        if response[0] == "WELCOME":
+            print(response[1])  # Welcome message
             self.options()
-        else:
+        elif response[0] == "CONNECTING":
+            print("A chat request is pending. Waiting for the connection to be established...")
+            while response[0] != "CONNECTING":
+                response = self._receive_chat()
+                if response[0] == "ERROR":
+                    print(f"Error: {response[1]}")
+                    self.options()
+                    return
             self.start_chat()
-
+        else:
+            print("Unexpected response from daemon. Exiting.")
+            exit(1)
 
 
     def options(self):
@@ -100,7 +112,8 @@ class Client:
         """
         while True:
             target_ip = input("Enter the target user's daemon IP address: ").strip()
-            if is_valid_ip(target_ip):
+            check = is_valid_ip(target_ip)
+            if check is True: # check if the IP address is valid
                 break
             else:
                 print("Invalid IP address. Try again.")
@@ -137,20 +150,39 @@ class Client:
         Wait for incoming chat requests from other users.
         """
         # inform daemon that client is waiting for chat requests
-        message = "CHAT|"
-        self._send_message(message)
+        print("Informing daemon that you are waiting for chat requests...")
+        self._send_message("WAIT|")
 
-        print("Waiting for incoming chat requests...")
-        response = self._receive_chat()
+
+        while True:
+            response = self._receive_chat()
+            if response[0] == "CONNECTING":
+                print(f"Incoming chat request from {response[1]}")
+                self.chat_partner = response[1]
+                self.start_chat()
+                break
+            elif response[0] == "ERROR":
+                print(f"Error: {response[1]}")
+                return
+            else:
+                print("Still waiting for incoming chat requests...")
+
 
     def _receive_chat(self):
         """
         Receive chat messages from the daemon and format it to a list.
+        Handle invalid or unexpected message formats and return an error message.
         """
-        data, addr = self.socket.recvfrom(1024)
-        response = data.decode('ascii').split('|')
-        #print(response[1])  # Print the chat message
-        return response
+        try:
+            data, addr = self.socket.recvfrom(1024)
+            response = data.decode('ascii').split('|')
+            if len(response) < 2: # check if the message is too short (at least op and payload needed!)
+                raise ValueError("Error: Invalid message format!")
+            #print(response[1])  # Print the chat message
+            return response
+        except Exception as e:
+            print(f"Error: {e}")
+            return ["ERROR", str(e)]
 
 
     def quit(self):
@@ -158,17 +190,18 @@ class Client:
         Disconnect from the daemon and exit.
         """
         print("Disconnecting from the daemon...")
-        # Notify daemon of client disconnect
-        message = "QUIT|"
-        self._send_message(message)
+        try:
+            self._send_message("QUIT|")
+            response = self._receive_chat()
+            if response[0] == "DISCONNECTED":
+                print(response[1]) # Print the disconnect message
+        except Exception as e:
+            print(f"Error while disconnecting: {e}")
+        finally:
+            self.socket.close()
+            print("Disconnected. Exiting...")
+            exit(0)
 
-        # receive conformation from daemon
-        response = self._receive_chat()
-        print(response[1])  # Print the disconnect message
-
-        self.socket.close()
-        print("Disconnected. Exiting...")
-        exit(0)
 
 
 def show_usage():

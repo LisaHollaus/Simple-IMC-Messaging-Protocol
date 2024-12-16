@@ -34,7 +34,7 @@ def is_valid_ip(ip: str) -> bool | str:
     :return: True if the IP is valid, Error message otherwise
     """
     try:
-        ipaddress.ip_address(ip)
+        ipaddress.ip_address(ip.strip())
         return True
     except ValueError as e:
         return f"Error: {ip} is not a valid IP address."
