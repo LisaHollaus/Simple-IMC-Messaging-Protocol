@@ -112,8 +112,8 @@ class SimpProtocol:
         Construct a SIMP datagram.
         """
 
-        if payload.isinstance(payload, ErrorCode):
-            payload = payload.message().encode('ascii')  # Convert error code to ascii message
+        if isinstance(payload, ErrorCode):
+            payload = payload.message().encode('ascii')  # if payload is instance of ErrorCode, convert error code to ascii message
 
         datagram_type = datagram_type.to_bytes(1, byteorder='big')
         operation = operation.to_bytes(1, byteorder='big')
@@ -127,7 +127,7 @@ class SimpProtocol:
 
         # adding checjsum to header
         checksum = calculate_checksum16(header + payload)
-        datagram = b''.join[(header, checksum, payload)]
+        datagram = b''.join([header, checksum, payload])
 
 
         return datagram
@@ -146,6 +146,9 @@ class SimpProtocol:
         if checksum_recv != checksum_calc:
             raise ValueError("Checksum verification failed, there's a mismatch!")
 
+        length = int.from_bytes(header[35:], byteorder='big')
+        if len(payload) != length:
+            raise ValueError("Payload length does not match the length field in the header")
 
         # validating the header
         if not self.validate_header(header):
@@ -179,12 +182,14 @@ class SimpProtocol:
 
         # check if the header is valid: either control or chat
         if header[0] not in (HeaderType.CONTROL.value, HeaderType.CHAT.value):
-            return False
+            raise ValueError("Invalid header type")
 
         # check if the operation is valid: either ERR, SYN, ACK, FIN, or CONST
         operation = header[1]
         if operation not in (Operation.ERR.value, Operation.SYN.value, Operation.ACK.value, Operation.FIN.value):
-            return False
+            raise ValueError("Invalid operation")
+
+        return True # if both checks above pass, return True
 
 
     def get_message_type(self, message):
@@ -220,6 +225,13 @@ class SimpProtocol:
                 return Operation.ACK
             elif operation_byte == 8:
                 return Operation.FIN
+
+    # simpler suggestion below as comment (we can discuss later what to pick):
+    #  operation_byte = message[1]
+    #     if header_type == HeaderType.CHAT:
+    #         return Operation.CONST  # Hardcoded for now for Chat; extend if needed
+    #     return Operation(operation_byte)  # Maps directly to the corresponding Operation enum
+
 
     # not sure if we need this
     def get_sequence_number(self, message):
