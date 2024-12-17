@@ -136,7 +136,6 @@ class SimpProtocol:
         """
         Parse a SIMP datagram.
         """
-
         header = data[:MAX_HEADER_SIZE]  # 39 bytes
         payload = data[MAX_HEADER_SIZE:-2] # this excludes checksum bytes
         checksum_recv = data[-2:] # last 2 bytes = checksum
