@@ -2,6 +2,7 @@ import socket
 import sys
 import simp_check_functions as check
 import threading
+from threading import Lock
 from simp_protocol import *
 from simp_check_functions import *
 
@@ -12,6 +13,7 @@ class SimpDaemon:
         """
         Initialize the daemon with the given IP and port.
         """
+        self.lock = Lock() # lock to serialize access to shared resources
         self.daemon_ip = daemon_ip
         self.port_to_daemon = 7777  # Port for communication with other daemons
         self.port_to_client = 7778  # Port for communication with clients
@@ -30,6 +32,18 @@ class SimpDaemon:
         self.chat_partner = {}  # IP and username of the current chat partner (if any) {client_ip: username}
         self.chat_requests = {}  # Track pending chat requests {client_ip: username}
         self.sequence_tracker = {}  # Track expected sequence numbers for chat partners {addr: expected_sequence_number}
+
+
+    def set_chat_partner(self, addr, user):
+        with self.lock:
+            self.chat_partner[addr] = user
+
+
+    def get_chat_partner(self):
+        with self.lock:
+            return self.chat_partner
+
+
 
     def start(self):
         """

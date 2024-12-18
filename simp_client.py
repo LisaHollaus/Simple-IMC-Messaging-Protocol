@@ -60,10 +60,8 @@ class Client:
         and append it to the message.
         """
         checksum = calculate_checksum16(message.encode('ascii'))
-        message_with_checksum = f"{message}|{checksum}"
+        message_with_checksum = f"{message}|{checksum:04X}" # add checksum to the message in the format: message|checksum (4 hex digits)
         self.socket.sendto(message_with_checksum.encode('ascii'), (self.daemon_ip, self.daemon_port))
-
-
 
 
     def start(self):
@@ -168,18 +166,21 @@ class Client:
                 print("Still waiting for incoming chat requests...")
 
 
-    def _receive_chat(self):
+    def _receive_chat(self, timeout=5):
         """
         Receive chat messages from the daemon and format it to a list.
         Handle invalid or unexpected message formats and return an error message.
         """
         try:
+            self.socket.settimeout(timeout) # setting timeout for receiving --> preventing infinite waiting
             data, addr = self.socket.recvfrom(1024)
             response = data.decode('ascii').split('|')
             if len(response) < 2: # check if the message is too short (at least op and payload needed!)
                 raise ValueError("Error: Invalid message format!")
             #print(response[1])  # Print the chat message
             return response
+        except socket.timeout:
+            return ["ERROR", "Timeout while waiting for the response"]
         except Exception as e:
             print(f"Error: {e}")
             return ["ERROR", str(e)]

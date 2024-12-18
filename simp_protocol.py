@@ -123,12 +123,11 @@ class SimpProtocol:
         length = len(payload)
         length = length.to_bytes(4, byteorder='big')
 
-        header = b''.join([datagram_type, operation, sequence, user, length, payload])
+        header = b''.join([datagram_type, operation, sequence, user, length])
 
         # adding checjsum to header
         checksum = calculate_checksum16(header + payload)
-        datagram = b''.join([header, checksum, payload])
-
+        datagram = b''.join([header, checksum.to_bytes(2, byteorder = 'big'), payload])
 
         return datagram
 
