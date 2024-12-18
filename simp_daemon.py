@@ -3,7 +3,7 @@ import sys
 import simp_check_functions as check
 import threading
 from threading import Lock
-from simp_protocol import *
+#from simp_protocol import *
 from simp_check_functions import *
 
 class SimpDaemon:
