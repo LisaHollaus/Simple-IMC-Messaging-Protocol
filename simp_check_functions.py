@@ -85,9 +85,12 @@ def check_header(message: bytes) -> HeaderInfo:
     #         header_info.code = ErrorCode.MESSAGE_TOO_LONG
     #         return header_info
 
-    payload = message[MAX_HEADER_SIZE:]
-    received_checksum = int.from_bytes(message[-2:], byteorder='big') # get the received checksum
-    calculated_checksum = calculate_checksum16(payload)
+    header = message[:MAX_HEADER_SIZE]
+    payload = message[MAX_HEADER_SIZE:-2]
+    received_checksum = message[-2:]
+
+    calculated_checksum = calculate_checksum16(header + payload)
+
     if received_checksum != calculated_checksum:  # check if the checksum is correct
         header_info.code = ErrorCode.WRONG_PAYLOAD
 

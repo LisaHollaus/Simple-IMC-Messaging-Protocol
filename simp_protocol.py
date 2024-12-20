@@ -63,7 +63,8 @@ class ErrorCode(Enum):
 
 
 class Operation(Enum):
-    CONST = 1  # for chat protocol
+    # for chat protocol
+    CONST = 1
     # for control protocol
     ERR = 1
     SYN = 2
@@ -82,9 +83,7 @@ class Operation(Enum):
         elif self == Operation.FIN:
             return int(8).to_bytes(1, byteorder='big')
 
-    # same like in HeaderType
-    #    def to_bytes(self):
-    #         return self.value.to_bytes(1, byteorder='big')
+
 
 
 
@@ -125,9 +124,9 @@ class SimpProtocol:
 
         header = b''.join([datagram_type, operation, sequence, user, length])
 
-        # adding checjsum to header
+        # adding checksum to header
         checksum = calculate_checksum16(header + payload)
-        datagram = b''.join([header, checksum.to_bytes(2, byteorder = 'big'), payload])
+        datagram = b''.join([header, payload, checksum])
 
         return datagram
 
@@ -135,18 +134,22 @@ class SimpProtocol:
         """
         Parse a SIMP datagram.
         """
+        #### call the check_header in here instead of outside?
+
         header = data[:MAX_HEADER_SIZE]  # 39 bytes
-        payload = data[MAX_HEADER_SIZE:-2] # this excludes checksum bytes
-        checksum_recv = data[-2:] # last 2 bytes = checksum
+        payload = data[MAX_HEADER_SIZE:-2]  # this excludes checksum bytes
+
+        ### not needed, because it's already in the check_header function:
+        #checksum_recv = data[-2:]  # last 2 bytes = checksum
 
         # recalc of checksum and verification
-        checksum_calc = calculate_checksum16(header + payload)
-        if checksum_recv != checksum_calc:
-            raise ValueError("Checksum verification failed, there's a mismatch!")
+        #checksum_calc = calculate_checksum16(header + payload)
+        #if checksum_recv != checksum_calc:
+         #   raise ValueError("Checksum verification failed, there's a mismatch!")
 
-        length = int.from_bytes(header[35:], byteorder='big')
-        if len(payload) != length:
-            raise ValueError("Payload length does not match the length field in the header")
+        #length = int.from_bytes(header[35:], byteorder='big')
+        #if len(payload) != length:
+         #   raise ValueError("Payload length does not match the length field in the header")
 
         # validating the header
         if not self.validate_header(header):
@@ -171,23 +174,21 @@ class SimpProtocol:
         }
 
 
-    def validate_header(self, header):
-        """
-        Validate the header fields to ensure the message format is correct.
-        :param header: The received header (first 39 bytes of the datagram).
-        :return: True if valid, False if invalid.
-        """
+
+#### already done in check_header:
+   # def validate_header(self, header):
+
 
         # check if the header is valid: either control or chat
-        if header[0] not in (HeaderType.CONTROL.value, HeaderType.CHAT.value):
-            raise ValueError("Invalid header type")
+    #    if header[0] not in (HeaderType.CONTROL.value, HeaderType.CHAT.value):
+     #       raise ValueError("Invalid header type")
 
         # check if the operation is valid: either ERR, SYN, ACK, FIN, or CONST
-        operation = header[1]
-        if operation not in (Operation.ERR.value, Operation.SYN.value, Operation.ACK.value, Operation.FIN.value):
-            raise ValueError("Invalid operation")
+      #  operation = header[1]
+       # if operation not in (Operation.ERR.value, Operation.SYN.value, Operation.ACK.value, Operation.FIN.value):
+        #    raise ValueError("Invalid operation")
 
-        return True # if both checks above pass, return True
+       # return True # if both checks above pass, return True
 
 
     def get_message_type(self, message):
