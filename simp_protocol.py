@@ -1,4 +1,5 @@
 from enum import Enum
+from simp_check_functions import *
 
 # change values to match the assignment
 MAX_HEADER_SIZE = 39
@@ -7,7 +8,6 @@ PAYLOAD_SIZE = 4
 MAX_STRING_PAYLOAD_SIZE = 256
 INT_PAYLOAD_SIZE = 4
 FLOAT_PAYLOAD_SIZE = 8
-
 
 
 class HeaderType(Enum):
@@ -22,10 +22,6 @@ class HeaderType(Enum):
             return int(2).to_bytes(1, byteorder='big')
         elif self == HeaderType.UNKNOWN:
             return int(0).to_bytes(1, byteorder='big')
-
-    # suggestion for a better implementation:
-    # def to_bytes(self):
-    #     return int(self.value).to_bytes(1, byteorder='big') --> but not sure so im just commenting this for now
 
 
 class ErrorCode(Enum):
@@ -60,7 +56,6 @@ class ErrorCode(Enum):
             return "User already in another chat"
 
 
-
 class Operation(Enum):
     # for chat protocol
     CONST = 1
@@ -83,10 +78,6 @@ class Operation(Enum):
             return int(8).to_bytes(1, byteorder='big')
 
 
-
-
-
-
 class HeaderInfo:
     is_ok = False
     type: HeaderType
@@ -100,10 +91,8 @@ class HeaderInfo:
         self.code = ErrorCode.OK
 
 
-
 class SimpProtocol:
     HEADER_FORMAT = '!BBB32sI'  # Type (1 byte), Operation (1 byte), Sequence (1 byte), User (32 bytes), Length (4 bytes)
-
 
     def create_datagram(self, datagram_type, operation, sequence, user, payload):
         """
@@ -133,27 +122,13 @@ class SimpProtocol:
         """
         Parse a SIMP datagram.
         """
-        #### call the check_header in here instead of outside?
 
         header = data[:MAX_HEADER_SIZE]  # 39 bytes
         payload = data[MAX_HEADER_SIZE:-2]  # this excludes checksum bytes
 
-        ### not needed, because it's already in the check_header function:
-        #checksum_recv = data[-2:]  # last 2 bytes = checksum
-
-        # recalc of checksum and verification
-        #checksum_calc = calculate_checksum16(header + payload)
-        #if checksum_recv != checksum_calc:
-         #   raise ValueError("Checksum verification failed, there's a mismatch!")
-
-        #length = int.from_bytes(header[35:], byteorder='big')
-        #if len(payload) != length:
-         #   raise ValueError("Payload length does not match the length field in the header")
-
         # validating the header
         if not self.validate_header(header):
             raise ValueError("Invalid header format/fields!")
-
 
         # parsing header and payload
         datagram_type = int(header[0])
@@ -172,24 +147,6 @@ class SimpProtocol:
             "payload": payload
         }
 
-
-
-#### already done in check_header:
-   # def validate_header(self, header):
-
-
-        # check if the header is valid: either control or chat
-    #    if header[0] not in (HeaderType.CONTROL.value, HeaderType.CHAT.value):
-     #       raise ValueError("Invalid header type")
-
-        # check if the operation is valid: either ERR, SYN, ACK, FIN, or CONST
-      #  operation = header[1]
-       # if operation not in (Operation.ERR.value, Operation.SYN.value, Operation.ACK.value, Operation.FIN.value):
-        #    raise ValueError("Invalid operation")
-
-       # return True # if both checks above pass, return True
-
-
     def get_message_type(self, message):
         """
             Extracts the header type from the message
@@ -202,7 +159,6 @@ class SimpProtocol:
         elif type_byte == 2:
             return HeaderType.CHAT
         return HeaderType.UNKNOWN
-
 
     def get_operation(self, message, header_type):
         """
@@ -224,14 +180,6 @@ class SimpProtocol:
             elif operation_byte == 8:
                 return Operation.FIN
 
-    # simpler suggestion below as comment (we can discuss later what to pick):
-    #  operation_byte = message[1]
-    #     if header_type == HeaderType.CHAT:
-    #         return Operation.CONST  # Hardcoded for now for Chat; extend if needed
-    #     return Operation(operation_byte)  # Maps directly to the corresponding Operation enum
-
-
-    # not sure if we need this
     def get_sequence_number(self, message):
         """
             Extracts the sequence number from the message
@@ -241,7 +189,6 @@ class SimpProtocol:
         seq_num = int(message[2])  # 00 or 01
         return seq_num
 
-
     def get_payload_size(self, message):
         """
             Extracts the payload size from the message
@@ -250,27 +197,3 @@ class SimpProtocol:
         """
         payload_size = message[35:39] # extract the payload size from the header (4 bytes)
         return int.from_bytes(payload_size, byteorder='big')
-
-
-
-# not sure we need this
-class SeqNum:
-    SEQ_0 = 0
-    SEQ_1 = 1
-
-    def to_bytes(self):
-        if self == SeqNum.SEQ_0:
-            return int(0).to_bytes(1, byteorder='big')
-        elif self == SeqNum.SEQ_1:
-            return int(1).to_bytes(1, byteorder='big')
-
-
-    # idk if we need it; but if yes, we need a different approach:
-    # leaving here for now as comments
-
-    #  @classmethod
-    # def from_bytes(cls, byte_data):
-        # return cls(byte_data)
-
-    # def to_bytes(self):
-        # return self.value.to_bytes(1, byteorder='big')

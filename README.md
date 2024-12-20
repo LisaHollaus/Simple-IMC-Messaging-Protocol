@@ -2,6 +2,9 @@
 #### Authors: Hollaus, Meseli
 
 ## How to run the application
+### Preparations:
+- activate the virtual environment
+
 ### Start the daemon:
 In order to start the daemon, run the following command in the terminal:
 python simp_daemon.py <IP address>

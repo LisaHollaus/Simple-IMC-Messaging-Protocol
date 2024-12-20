@@ -2,6 +2,7 @@ import socket
 import sys
 from simp_check_functions import *
 
+
 class Client:
     def __init__(self, daemon_ip):
         """
@@ -11,7 +12,7 @@ class Client:
         self.daemon_port = 7778  # Default port for the daemon
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)  # UDP socket
         self.username = None  # Set during user login or setup
-        self.chat_partner = None # Set during chat setup
+        self.chat_partner = None  # Set during chat setup
 
     def connect_to_daemon(self):
         """
@@ -64,9 +65,7 @@ class Client:
         retries = 0
         while retries < max_retries:
             try:
-                # Calculate checksum and send the message
-                #checksum = calculate_checksum16(message.encode('ascii'))
-                #message_with_checksum = f"{message}|{checksum:04X}"
+
                 self.socket.sendto(message.encode('ascii'), (self.daemon_ip, self.daemon_port))
                 print(f"Message sent: {message}")
 
@@ -122,7 +121,6 @@ class Client:
             else:
                 print("Invalid choice. Try again.")
 
-
     def start_chat(self):
         """
         Initiate a chat request with another user.
@@ -159,9 +157,6 @@ class Client:
         print("Chat ended.")
         self.options()
 
-
-
-
     def wait_for_chat(self):
         """
         Wait for incoming chat requests from other users.
@@ -169,7 +164,6 @@ class Client:
         # inform daemon that client is waiting for chat requests
         print("Informing daemon that you are waiting for chat requests...")
         self._send_message("WAIT|")
-
 
         while True:
             response = self._receive_chat()
@@ -182,9 +176,8 @@ class Client:
                 print(f"Error: {response[1]}")
                 return
             else:
-                print(response[1])  # ?
+                print(response[1])
                 print("Still waiting for incoming chat requests...")
-
 
     def _receive_chat(self):
         """
@@ -192,24 +185,15 @@ class Client:
         Automatically send an ACK for every valid message received.
         Handle invalid or unexpected message formats and return an error message.
         """
-
             # timeout needed?
             # should the user be asked again if he doesn't respond within the timeout?
         try:
             data, addr = self.socket.recvfrom(1024)
 
-            # Extract message and checksum
-            #received_data = data[:-2]  # Message without checksum
-            #received_checksum = data[-2:]  # Last 2 bytes are checksum
             print("receiving.. ")
-            #print(received_checksum)
 
-            # Verify checksum
-            #calculated_checksum = calculate_checksum16(received_data)
-            #print(calculated_checksum)
-
-            #if received_checksum != calculated_checksum:
-             #   return ["ERROR", "Checksum verification failed"]
+            if not data:  # Check if data is empty
+                return ["ERROR", "Received empty message"]
 
             response = data.decode('ascii').split('|')
             if len(response) < 1:  # check if the message is too short (at least operation needed!)
@@ -218,9 +202,9 @@ class Client:
             # If the message is not an ACK, send an ACK response
             if response[0] != "ACK":
                 self._send_ack(addr)
-            #elif response[0] == "ACK":
-             #   print("ACK received.")
-              #  self._receive_chat()  # Wait for the next message (skip ACK)
+            elif response[0] == "ACK":
+                print("ACK received.")
+                self._receive_chat()  # Wait for the next message (skip ACK)
 
             return response  # [operation, payload]
 
@@ -235,13 +219,10 @@ class Client:
         """
         try:
             ack_message = "ACK|"
-            #checksum = calculate_checksum16(ack_message.encode('ascii'))
-            #ack_with_checksum = f"{ack_message}|{checksum}"
             self.socket.sendto(ack_message.encode('ascii'), addr)
             print("ACK sent.")
         except Exception as e:
             print(f"Error while sending ACK: {e}")
-
 
     def quit(self):
         """
@@ -259,7 +240,6 @@ class Client:
             self.socket.close()
             print("Disconnected. Exiting...")
             exit(0)
-
 
 
 def show_usage():

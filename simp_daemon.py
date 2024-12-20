@@ -4,6 +4,7 @@ import threading
 from threading import Lock
 from simp_check_functions import *
 
+
 class SimpDaemon:
     #protocol = SimpProtocol()  # Creating an instance of SimpProtocol to make use of the class methods
 
@@ -31,17 +32,13 @@ class SimpDaemon:
         self.chat_requests = {}  # Track pending chat requests {client_ip: username}
         self.sequence_tracker = {}  # Track expected sequence numbers for chat partners {addr: expected_sequence_number}
 
-
     def set_chat_partner(self, addr, user):
         with self.lock:
             self.chat_partner[addr] = user
 
-
     def get_chat_partner(self):
         with self.lock:
             return self.chat_partner
-
-
 
     def start(self):
         """
@@ -55,12 +52,12 @@ class SimpDaemon:
 
         # Create threads
         client_thread = threading.Thread(target=self.listen_for_client_connections, daemon=True)  # Listen for new connections
-       # chat_thread = threading.Thread(target=self.listen_for_client_connections, daemon=True)  # Handle the current chat session
+        # chat_thread = threading.Thread(target=self.listen_for_client_connections, daemon=True)  # Handle the current chat session
         daemon_thread = threading.Thread(target=self.listen_to_daemons, daemon=True)  # Listen to other daemons and handle chat requests
 
         # Start threads
         client_thread.start()
-        #chat_thread.start()
+        # chat_thread.start()
         daemon_thread.start()
 
         # Keep the main thread running
@@ -69,7 +66,6 @@ class SimpDaemon:
                 pass
         except KeyboardInterrupt:
             self.stop()  # shutting down the daemon
-
 
     def listen_for_client_connections(self):
         """
@@ -98,19 +94,9 @@ class SimpDaemon:
         """
         Process incoming messages from the client and respond accordingly.
         """
-        # Checksum test
-        #received_data = data[:-2]  # Message without checksum
-        #received_checksum = data[-2:]  # Last 2 bytes are checksum
 
         # send ACK to the client
         self._send_message_client("ACK", addr)
-
-        #calculated_checksum = calculate_checksum16(received_data)
-        #if received_checksum != calculated_checksum:
-            # Send error response with checksum
-         #   error_msg = "ERROR|Checksum verification failed"
-          #  self._send_message_client(error_msg, addr)
-           # return
 
         # Parse the received message
         message = data.decode('ascii').split('|')  # Format: OPERATION|PAYLOAD
@@ -175,7 +161,6 @@ class SimpDaemon:
 
         self._send_message_client(response, addr)
 
-
     def forward_chat_messages(self, message, client_addr):
         """
         Forward a chat message to the chat partner.
@@ -227,10 +212,6 @@ class SimpDaemon:
             self._send_message_client(response, client_addr)
             return
 
-
-        ## use a timeout to avoid infinite waiting for the chat partner or at least give him the option to quit?
-
-
         # wait for the response from the chat partner (stop and wait)
         header_info, data, addr = self.receive_datagram()
         if header_info.type == HeaderType.CHAT and header_info.operation == Operation.CONST:
@@ -247,16 +228,10 @@ class SimpDaemon:
             response = f"ERROR| {data['payload']}"
         self.client_socket.sendto(response, client_addr)
 
-
-
     def _send_message_client(self, message, addr):
         """
-        Send a message to the client, including a checksum.
+        Send a message to the client
         """
-        #checksum = calculate_checksum16(message.encode('ascii'))
-        #message_with_checksum = f"{message}|{checksum:04X}"
-        self.client_socket.sendto(message.encode('ascii'), addr)
-
         max_retries = 3
         retries = 0
         while retries < max_retries:
@@ -274,8 +249,6 @@ class SimpDaemon:
             except socket.timeout:
                 retries += 1
                 print(f"Timeout waiting for ACK from {addr}. Resending message.")
-
-
 
     def _get_requests(self, addr):
         """
@@ -308,14 +281,11 @@ class SimpDaemon:
 
             #response = "ERROR|Invalid response. Please enter a valid username or 'NO'."
 
-
-
     def wait_for_chat_partner(self, addr):
         """
         Wait for incoming chat requests (SYN) from other users (daemon).
         Periodically check with the user if they want to keep waiting.
         """
-        #global header_info
         while True:
             try:
                 self.daemon_socket.settimeout(30)  # Set a timeout for the incoming chat requests
@@ -370,8 +340,6 @@ class SimpDaemon:
 
             else:
                 print(f"Unexpected datagram from {daemon_addr}. Ignoring...")
-
-
 
     def receive_datagram(self):
         """
@@ -432,9 +400,6 @@ class SimpDaemon:
 
         return header_info, data, addr
 
-
-
-
     def handle_message(self,header_info, data, addr):
         """
         Process incoming messages and respond accordingly.
@@ -464,9 +429,6 @@ class SimpDaemon:
 
             # send FIN datagram and close the connection
             self.closing_connection(addr)
-
-
-
 
     def three_way_handshake(self, addr):
         """
@@ -566,9 +528,6 @@ class SimpDaemon:
 
         # self.available = True # in case of successful connection before
 
-
-
-
     def listen_to_daemons(self):
         """
         Handles communication with other daemons on port 7777.
@@ -597,7 +556,6 @@ class SimpDaemon:
                             header_info.code  # Error message
                         )
                     self.daemon_socket.sendto(error_response, addr)
-
 
     def stop(self):
         """

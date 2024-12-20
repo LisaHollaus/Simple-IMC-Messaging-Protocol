@@ -4,6 +4,7 @@ from simp_protocol import *
 # Create an instance of SimpProtocol
 protocol = SimpProtocol()
 
+
 def calculate_checksum16(bytes_data: bytes) -> bytes: # using own checksum function form previous assignment
     """
     Calculates a checksum from a byte array (16 bits).
@@ -39,6 +40,7 @@ def is_valid_ip(ip: str) -> bool | str:
     except ValueError as e:
         return f"Error: {ip} is not a valid IP address."
 
+
 def check_header(message: bytes) -> HeaderInfo:
     """
     Checks if header is correctly built
@@ -73,27 +75,12 @@ def check_header(message: bytes) -> HeaderInfo:
     elif payload_size == 0:
         header_info.code = ErrorCode.MESSAGE_TOO_SHORT
 
-    # if header_info.type is HeaderType.CONTROL:
-    #     if payload_size != INT_PAYLOAD_SIZE:
-    #         header_info.code = ErrorCode.TYPE_MISMATCH
-    #         return header_info
-    # elif header_info.type is HeaderType.CHAT:
-    #     if payload_size == 0:  # check if the payload is too short
-    #         header_info.code = ErrorCode.MESSAGE_TOO_SHORT
-    #         return header_info
-    #     elif payload_size > MAX_STRING_PAYLOAD_SIZE:  # check if the payload is too long
-    #         header_info.code = ErrorCode.MESSAGE_TOO_LONG
-    #         return header_info
-
     header = message[:MAX_HEADER_SIZE]
     payload = message[MAX_HEADER_SIZE:-2]
     received_checksum = message[-2:]
 
     calculated_checksum = calculate_checksum16(header + payload)
-    # convert calculated checksum to binary?
     print(received_checksum, calculated_checksum)
-
-
 
     if received_checksum != calculated_checksum:  # check if the checksum is correct
         header_info.code = ErrorCode.WRONG_PAYLOAD
@@ -106,5 +93,3 @@ def check_header(message: bytes) -> HeaderInfo:
     header_info.sequence_number = sequence_number
     return header_info
 
-    # fill out with error checks
-    # create ErrorCodes class for reply in simp_protocol.py
