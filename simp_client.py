@@ -29,9 +29,9 @@ class Client:
             # 2. Receive a response from the daemon (PONG)
             response = self._receive_chat()
             if response[0] == "PONG":
-                print(f"Connected to daemon at {self.daemon_ip}.")
+                print(f"Connected to daemon {self.daemon_ip}!")
             else:
-                print(f"Error: {response[1]}")
+                print(f"Error in connecting: {response[1]}")
                 exit(1)
 
             # 3. If the response is positive, proceed with the client setup
@@ -40,6 +40,8 @@ class Client:
             self._send_message(message)
 
             response = self._receive_chat()  # Wait for the welcome message
+
+            print("received", response)
             print(response[1])  # Print welcome message and pending chat requests
             if response[1] == f"Welcome, {self.username}! You currently have no pending chat requests.":
                 return response
@@ -53,16 +55,39 @@ class Client:
             print(f"Error: {e}")
             exit(1)
 
-
     def _send_message(self, message):
         """
-        Send a message to the daemon, also calculate the checksum
-        and append it to the message.
+        Send a message and wait for an ACK from the daemon.
+        If no ACK is received within the timeout, retry sending the message.
         """
-        checksum = calculate_checksum16(message.encode('ascii'))
-        message_with_checksum = f"{message}|{checksum:04X}" # add checksum to the message in the format: message|checksum (4 hex digits)
-        self.socket.sendto(message_with_checksum.encode('ascii'), (self.daemon_ip, self.daemon_port))
+        max_retries = 3
+        retries = 0
+        while retries < max_retries:
+            try:
+                # Calculate checksum and send the message
+                #checksum = calculate_checksum16(message.encode('ascii'))
+                #message_with_checksum = f"{message}|{checksum:04X}"
+                self.socket.sendto(message.encode('ascii'), (self.daemon_ip, self.daemon_port))
+                #print(f"Message sent: {message_with_checksum}")
 
+                # Wait for ACK
+                self.socket.settimeout(5)  # Set timeout for receiving
+                response = self._receive_chat()
+
+                # Check if the response is an ACK
+                if response[0] == "ACK":
+                    print("ACK received.")
+                    return  # Message sent successfully and ACK received
+
+            except socket.timeout:
+                retries += 1
+                print(f"Timeout waiting for ACK. Retrying... ({retries} of {max_retries})")
+
+            except Exception as e:
+                raise e
+
+        print("Max retries exceeded. Message not acknowledged.")
+        raise Exception("Max retries exceeded. Message not acknowledged. Daemon not reachable. Exiting.")
 
     def start(self):
         """
@@ -70,21 +95,13 @@ class Client:
         """
         response = self.connect_to_daemon()  # Connect to the daemon before starting
 
-        if response[0] == "WELCOME":
-            print(response[1])  # Welcome message
+        print("connected to daemonnnnn!",response)
+        if response[1] == f"Welcome, {self.username}! You currently have no pending chat requests." or response == "CONNECTING|":  # not accepted requests
             self.options()
-        elif response[0] == "CONNECTING":
-            print("A chat request is pending. Waiting for the connection to be established...")
-            while response[0] != "CONNECTING":
-                response = self._receive_chat()
-                if response[0] == "ERROR":
-                    print(f"Error: {response[1]}")
-                    self.options()
-                    return
-            self.start_chat()
         else:
-            print("Unexpected response from daemon. Exiting.")
-            exit(1)
+            self.start_chat()
+
+
 
 
     def options(self):
@@ -163,27 +180,65 @@ class Client:
                 print(f"Error: {response[1]}")
                 return
             else:
+                print(response[1])  # ?
                 print("Still waiting for incoming chat requests...")
 
 
-    def _receive_chat(self, timeout=5):
+    def _receive_chat(self):
         """
         Receive chat messages from the daemon and format it to a list.
+        Automatically send an ACK for every valid message received.
         Handle invalid or unexpected message formats and return an error message.
         """
+
+            # timeout needed?
+            # should the user be asked again if he doesn't respond within the timeout?
         try:
-            self.socket.settimeout(timeout) # setting timeout for receiving --> preventing infinite waiting
             data, addr = self.socket.recvfrom(1024)
+
+            # Extract message and checksum
+            #received_data = data[:-2]  # Message without checksum
+            #received_checksum = data[-2:]  # Last 2 bytes are checksum
+            print("receiving.. ")
+            #print(received_checksum)
+
+            # Verify checksum
+            #calculated_checksum = calculate_checksum16(received_data)
+            #print(calculated_checksum)
+
+            #if received_checksum != calculated_checksum:
+             #   return ["ERROR", "Checksum verification failed"]
+
             response = data.decode('ascii').split('|')
-            if len(response) < 2: # check if the message is too short (at least op and payload needed!)
-                raise ValueError("Error: Invalid message format!")
-            #print(response[1])  # Print the chat message
-            return response
-        except socket.timeout:
-            return ["ERROR", "Timeout while waiting for the response"]
-        except Exception as e:
+            if len(response) < 1:  # check if the message is too short (at least operation needed!)
+                raise ["Error", "Invalid message format!"]
+
+            # If the message is not an ACK, send an ACK response
+            if response[0] != "ACK":
+                self._send_ack(addr)
+            #elif response[0] == "ACK":
+             #   print("ACK received.")
+              #  self._receive_chat()  # Wait for the next message (skip ACK)
+
+            return response  # [operation, payload]
+
+        except Exception as e:  # catch all exceptions
             print(f"Error: {e}")
             return ["ERROR", str(e)]
+
+
+    def _send_ack(self, addr):
+        """
+        Send an automatic ACK to the daemon after receiving a message.
+        """
+        try:
+            ack_message = "ACK|"
+            #checksum = calculate_checksum16(ack_message.encode('ascii'))
+            #ack_with_checksum = f"{ack_message}|{checksum}"
+            self.socket.sendto(ack_message.encode('ascii'), addr)
+            print("ACK sent.")
+        except Exception as e:
+            print(f"Error while sending ACK: {e}")
 
 
     def quit(self):
@@ -195,7 +250,7 @@ class Client:
             self._send_message("QUIT|")
             response = self._receive_chat()
             if response[0] == "DISCONNECTED":
-                print(response[1]) # Print the disconnect message
+                print(response[1])  # Print the disconnect message
         except Exception as e:
             print(f"Error while disconnecting: {e}")
         finally:

@@ -90,6 +90,10 @@ def check_header(message: bytes) -> HeaderInfo:
     received_checksum = message[-2:]
 
     calculated_checksum = calculate_checksum16(header + payload)
+    # convert calculated checksum to binary?
+    print(received_checksum, calculated_checksum)
+
+
 
     if received_checksum != calculated_checksum:  # check if the checksum is correct
         header_info.code = ErrorCode.WRONG_PAYLOAD
