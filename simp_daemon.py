@@ -155,7 +155,7 @@ class SimpDaemon:
                     response = f"ERROR| {msg}"
 
         elif operation == "CHAT":
-            if self.chat_partner:
+            if self.get_chat_partner():
                 # forward the message to the chat partner and vise versa
                 self.forward_chat_messages(payload, addr)
             else:
@@ -182,8 +182,8 @@ class SimpDaemon:
         Create chat datagram and send it to the chat partner
         Receive answer and send it back to the client
         """
-
-        chat_partner_addr = list(self.chat_partner.keys())[0]
+        chat_partner = self.get_chat_partner()
+        chat_partner_addr = list(chat_partner.keys())[0]
         # Initial sequence number (alternate between 0 and 1 for retransmissions)
         sequence_number = self.sequence_tracker.get(chat_partner_addr, 1)  # Default is 1
 
@@ -300,7 +300,7 @@ class SimpDaemon:
                 elif response[1] in self.chat_requests.values():
                     # connect to the chat partner
                     ip = [ip for ip, user in self.chat_requests.items() if user == response[1]][0]  # get the IP
-                    self.chat_partner = {ip: response[1]}  # set the chat partner
+                    self.set_chat_partner(ip, response[1])
 
                     # remove the chat request from the list
                     self.chat_requests.pop(ip)
@@ -362,7 +362,7 @@ class SimpDaemon:
                         print(f"ACK received from {daemon_addr}. Handshake complete.")
 
                         # Set the chat partner and break the loop
-                        self.chat_partner = {daemon_addr[0]: data['user']}
+                        self.set_chat_partner(daemon_addr[0], data['user'])
                         return  # Exit the function after a successful handshake
 
                 except socket.timeout:
@@ -527,7 +527,7 @@ class SimpDaemon:
         self.sequence_tracker[addr] = 1 - sequence_number  # Initialize expected sequence number for chat partner
 
         # set the chat partner
-        self.chat_partner = {addr: data['user']}
+        self.set_chat_partner(addr, data['user'])
         return True, data['user']  # return the chat partner's username
 
     def closing_connection(self, addr):

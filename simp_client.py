@@ -68,7 +68,7 @@ class Client:
                 #checksum = calculate_checksum16(message.encode('ascii'))
                 #message_with_checksum = f"{message}|{checksum:04X}"
                 self.socket.sendto(message.encode('ascii'), (self.daemon_ip, self.daemon_port))
-                #print(f"Message sent: {message_with_checksum}")
+                print(f"Message sent: {message}")
 
                 # Wait for ACK
                 self.socket.settimeout(5)  # Set timeout for receiving
@@ -78,6 +78,9 @@ class Client:
                 if response[0] == "ACK":
                     print("ACK received.")
                     return  # Message sent successfully and ACK received
+                else:
+                    print(f"Unexpected response: {response[0]}")
+                    retries += 1
 
             except socket.timeout:
                 retries += 1
@@ -86,7 +89,6 @@ class Client:
             except Exception as e:
                 raise e
 
-        print("Max retries exceeded. Message not acknowledged.")
         raise Exception("Max retries exceeded. Message not acknowledged. Daemon not reachable. Exiting.")
 
     def start(self):
@@ -211,7 +213,7 @@ class Client:
 
             response = data.decode('ascii').split('|')
             if len(response) < 1:  # check if the message is too short (at least operation needed!)
-                raise ["Error", "Invalid message format!"]
+                return ["Error", "Invalid message format!"]
 
             # If the message is not an ACK, send an ACK response
             if response[0] != "ACK":
