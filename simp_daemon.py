@@ -45,7 +45,7 @@ class SimpDaemon:
         Main loop for the daemon.
 
         Start the daemon and run separate threads for listening to new connections
-        and handling the current chat.
+        and handling the acurrent chat.
 
         """
         print(f"Starting daemon at {self.daemon_ip}...")
@@ -84,7 +84,10 @@ class SimpDaemon:
 
         while self.running:
             try:
+                # wait for incoming messages from the client
                 data, addr = self.client_socket.recvfrom(1024)
+
+                # handle the message from the client
                 self.handle_message_client(data, addr)
             except Exception as e:
                 print(f"Error in listening for connections: {e}")
@@ -95,14 +98,17 @@ class SimpDaemon:
         Process incoming messages from the client and respond accordingly.
         """
 
-        # send ACK to the client
-        self._send_message_client("ACK", addr)
-
         # Parse the received message
         message = data.decode('ascii').split('|')  # Format: OPERATION|PAYLOAD
         operation = message[0]
         payload = message[1] if len(message) > 1 else None  # Extract the payload if it exists
         response = None
+
+        if operation != "ACK":
+            print(f"Received message from {addr}: {operation} | {payload}\n"
+                  f"sending ACK to {addr}...")
+            # send ACK to the client
+            self._send_message_client("ACK", addr)
 
         # Handle the operation
         if operation == "PING":
@@ -110,6 +116,7 @@ class SimpDaemon:
                 response = "ERROR|Daemon is busy with another user."
             else:
                 self.available = False
+                print("sending PONG")
                 response = "PONG|Daemon is running."
 
         elif operation == "CONNECT":
@@ -232,20 +239,25 @@ class SimpDaemon:
         """
         Send a message to the client
         """
+
         max_retries = 3
         retries = 0
         while retries < max_retries:
             try:
                 self.client_socket.sendto(message.encode('ascii'), addr)
 
-                # wait for ACK
-                self.client_socket.settimeout(5)  # Set timeout for receiving
+                # wait for ACK if the message is not an ACK
+                if message != "ACK":
+                    self.client_socket.settimeout(5)  # Set timeout for receiving
 
-                data, addr = self.client_socket.recvfrom(1024)
-                message = data.decode('ascii').split('|')  # Format: OPERATION|PAYLOAD
-                if message[0] == "ACK":
-                    print("ACK received.")
-                    return
+                    data, addr = self.client_socket.recvfrom(1024)
+                    message_ack = data.decode('ascii').split('|')  # Format: OPERATION|PAYLOAD
+
+                    if message_ack[0] == "ACK":
+                        print("ACK received.")
+                        return
+                return  # Message sent successfully
+
             except socket.timeout:
                 retries += 1
                 print(f"Timeout waiting for ACK from {addr}. Resending message.")

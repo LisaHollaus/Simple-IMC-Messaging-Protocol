@@ -29,10 +29,11 @@ class Client:
 
             # 2. Receive a response from the daemon (PONG)
             response = self._receive_chat()
+
             if response[0] == "PONG":
                 print(f"Connected to daemon {self.daemon_ip}!")
             else:
-                print(f"Error in connecting: {response[1]}")
+                print(f"Error in connecting: {response}")
                 exit(1)
 
             # 3. If the response is positive, proceed with the client setup
@@ -53,7 +54,7 @@ class Client:
             return response
 
         except Exception as e:
-            print(f"Error: {e}")
+            print(f"Error in connect_to_daemon: {e}")
             exit(1)
 
     def _send_message(self, message):
@@ -71,14 +72,14 @@ class Client:
 
                 # Wait for ACK
                 self.socket.settimeout(5)  # Set timeout for receiving
-                response = self._receive_chat()
+                response_ack = self._receive_chat()
 
                 # Check if the response is an ACK
-                if response[0] == "ACK":
+                if response_ack[0] == "ACK":
                     print("ACK received.")
                     return  # Message sent successfully and ACK received
                 else:
-                    print(f"Unexpected response: {response[0]}")
+                    print(f"Unexpected response: {response_ack}")
                     retries += 1
 
             except socket.timeout:
@@ -201,10 +202,11 @@ class Client:
 
             # If the message is not an ACK, send an ACK response
             if response[0] != "ACK":
+                print("sending ACK")
                 self._send_ack(addr)
-            elif response[0] == "ACK":
-                print("ACK received.")
-                self._receive_chat()  # Wait for the next message (skip ACK)
+            #elif response[0] == "ACK":
+             #   print("ACK received.")
+              #  self._receive_chat()  # Wait for the next message (skip ACK)
 
             return response  # [operation, payload]
 
