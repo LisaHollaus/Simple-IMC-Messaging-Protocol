@@ -84,14 +84,22 @@ class SimpDaemon:
 
         while self.running:
             try:
+                self.client_socket.settimeout(None)  # Remove timeout for listening
+
                 # wait for incoming messages from the client
                 data, addr = self.client_socket.recvfrom(1024)
 
                 # handle the message from the client
-                self.handle_message_client(data, addr)
+                new_response = self.handle_message_client(data, addr)
+
+                # send the response to the client, if any
+                if new_response:
+                    self._send_message_client(new_response, addr)
+
+
             except Exception as e:
                 print(f"Error in listening for connections: {e}")
-                exit(1)
+                continue  # continue with the loop
 
     def handle_message_client(self, data, addr):
         """
@@ -102,22 +110,25 @@ class SimpDaemon:
         message = data.decode('ascii').split('|')  # Format: OPERATION|PAYLOAD
         operation = message[0]
         payload = message[1] if len(message) > 1 else None  # Extract the payload if it exists
-        response = None
 
+        # send ACK to the client if the message is not an ACK itself
         if operation != "ACK":
             print(f"Received message from {addr}: {operation} | {payload}\n"
                   f"sending ACK to {addr}...")
             # send ACK to the client
             self._send_message_client("ACK", addr)
+        else:
+            print(f"Received ACK from {addr}.")
+            return
 
         # Handle the operation
         if operation == "PING":
             if not self.available:
-                response = "ERROR|Daemon is busy with another user."
+                return "ERROR|Daemon is busy with another user."
             else:
                 self.available = False
                 print("sending PONG")
-                response = "PONG|Daemon is running."
+                return "PONG|Daemon is running."
 
         elif operation == "CONNECT":
             self.current_user = payload
@@ -125,10 +136,10 @@ class SimpDaemon:
 
             # check if there are any pending chat requests
             if len(self.chat_requests) > 0:
-                response = self._get_requests(addr)
+                return self._get_requests(addr)
             else:
                 print("sending CONNECT")
-                response = f"CONNECT|Welcome, {self.current_user}! You currently have no pending chat requests."
+                return f"CONNECT|Welcome, {self.current_user}! You currently have no pending chat requests."
 
         elif operation == "CONNECTING":
             if not payload:
@@ -143,30 +154,25 @@ class SimpDaemon:
                 connected, msg = self.three_way_handshake(target_ip)  # return two values (bool, error/username)
 
                 if connected:
-                    response = f"CONNECTING|Connected to user: {msg}"
+                    return f"CONNECTING|Connected to user: {msg}"
                 else:
-                    response = f"ERROR| {msg}"
+                    return f"ERROR| {msg}"
 
         elif operation == "CHAT":
             if self.get_chat_partner():
                 # forward the message to the chat partner and vise versa
                 self.forward_chat_messages(payload, addr)
             else:
-                response = "ERROR|No chat partner available."
+                return "ERROR|No chat partner available."
 
         elif operation == "QUIT":
             self.available = True
             self.current_user = None
-            response = "QUIT|You have been disconnected."
-
-        elif operation == "ACK":
-            # skip
-            return
+            return "QUIT|You have been disconnected."
 
         else:
-            response = "ERROR|Unknown operation."
+            return "ERROR|Unknown operation."
 
-        self._send_message_client(response, addr)
 
     def forward_chat_messages(self, message, client_addr):
         """
@@ -239,7 +245,6 @@ class SimpDaemon:
         """
         Send a message to the client
         """
-
         max_retries = 3
         retries = 0
         while retries < max_retries:
@@ -249,18 +254,30 @@ class SimpDaemon:
                 # wait for ACK if the message is not an ACK
                 if message != "ACK":
                     self.client_socket.settimeout(5)  # Set timeout for receiving
+                    try:
+                        data, addr = self.client_socket.recvfrom(1024)
+                        message_ack = data.decode('ascii').split('|')  # Format: OPERATION|PAYLOAD
 
-                    data, addr = self.client_socket.recvfrom(1024)
-                    message_ack = data.decode('ascii').split('|')  # Format: OPERATION|PAYLOAD
+                        if message_ack[0] == "ACK":
+                            print("ACK received.")
+                            self.client_socket.settimeout(None)  # Reset timeout
+                            return
+                    except socket.timeout:
+                        retries += 1
+                        print(f"Timeout waiting for ACK from {addr}. Retry {retries}/{max_retries}")
+                        continue
+                else:
+                    return  # No need to wait for ACK if sending an ACK
 
-                    if message_ack[0] == "ACK":
-                        print("ACK received.")
-                        return
-                return  # Message sent successfully
-
-            except socket.timeout:
+            except Exception as e:
+                print(f"Error sending message to client: {e}")
                 retries += 1
-                print(f"Timeout waiting for ACK from {addr}. Resending message.")
+
+        print(f"Failed to send message after {max_retries} attempts")
+        self.client_socket.settimeout(None)  # Reset timeout
+
+
+
 
     def _get_requests(self, addr):
         """

@@ -97,7 +97,7 @@ class Client:
         """
         response = self.connect_to_daemon()  # Connect to the daemon before starting
 
-        print("connected to daemonnnnn!",response)
+        print("connected to daemonnnnn!", response)
         if response[1] == f"Welcome, {self.username}! You currently have no pending chat requests." or response == "CONNECTING|":  # not accepted requests
             self.options()
         else:
