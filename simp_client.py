@@ -4,6 +4,9 @@ from simp_check_functions import *
 
 
 class Client:
+    SOCKET_TIMEOUT = 5
+    MAX_RETRIES = 3
+
     def __init__(self, daemon_ip):
         """
         Initialize the client to communicate with a specific daemon.
@@ -88,6 +91,9 @@ class Client:
 
             except Exception as e:
                 raise e
+            
+            finally:
+                self.socket.settimeout(None)
 
         raise Exception("Max retries exceeded. Message not acknowledged. Daemon not reachable. Exiting.")
 
@@ -97,7 +103,6 @@ class Client:
         """
         response = self.connect_to_daemon()  # Connect to the daemon before starting
 
-        print("connected to daemonnnnn!", response)
         if response[1] == f"Welcome, {self.username}! You currently have no pending chat requests." or response == "CONNECTING|":  # not accepted requests
             self.options()
         else:
@@ -162,9 +167,6 @@ class Client:
         """
         Wait for incoming chat requests from other users.
         """
-        # inform daemon that client is waiting for chat requests
-        print("Informing daemon that you are waiting for chat requests...")
-        self._send_message("WAIT|")
 
         while True:
             response = self._receive_chat()
@@ -189,6 +191,7 @@ class Client:
             # timeout needed?
             # should the user be asked again if he doesn't respond within the timeout?
         try:
+
             data, addr = self.socket.recvfrom(1024)
 
             print("receiving.. ")

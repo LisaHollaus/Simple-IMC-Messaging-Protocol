@@ -6,12 +6,14 @@ from simp_check_functions import *
 
 
 class SimpDaemon:
-    #protocol = SimpProtocol()  # Creating an instance of SimpProtocol to make use of the class methods
+    SOCKET_TIMEOUT = 5
+    MAX_RETRIES = 3
 
     def __init__(self, daemon_ip):
         """
         Initialize the daemon with the given IP and port.
         """
+        self.protocol = SimpProtocol()  # Creating an instance of SimpProtocol to make use of the class methods
         self.lock = Lock()  # lock to serialize access to shared resources
         self.daemon_ip = daemon_ip
         self.port_to_daemon = 7777  # Port for communication with other daemons
@@ -196,11 +198,11 @@ class SimpDaemon:
 
         # send datagram and wait for ACK from the chat partner
         # try up to 3 times to send the message to avoid infinite loop for unreachable chat partner
-        max_retries = 3
+        max_retries = self.MAX_RETRIES
         retry_count = 0
         while retry_count < max_retries:
             try:
-                self.daemon_socket.settimeout(5)  # Set a timeout for the response
+                self.daemon_socket.settimeout(self.SOCKET_TIMEOUT)  # Set a timeout for the response
                 self.daemon_socket.sendto(response, chat_partner_addr)
                 print(f"Message sent to chat partner {chat_partner_addr}.")
 
@@ -219,6 +221,9 @@ class SimpDaemon:
                 print(f"Timeout: No ACK received from {chat_partner_addr}. Retrying... {retry_count + 1} of {max_retries}")
                 retry_count += 1
                 # Retransmit the same datagram
+            
+            finally:
+                self.daemon_socket.settimeout(None)
 
         if retry_count == max_retries:
             response = "ERROR|Failed to deliver message after maximum retries"
@@ -245,7 +250,7 @@ class SimpDaemon:
         """
         Send a message to the client
         """
-        max_retries = 3
+        max_retries = self.MAX_RETRIES
         retries = 0
         while retries < max_retries:
             try:
@@ -253,7 +258,7 @@ class SimpDaemon:
 
                 # wait for ACK if the message is not an ACK
                 if message != "ACK":
-                    self.client_socket.settimeout(5)  # Set timeout for receiving
+                    self.client_socket.settimeout(self.SOCKET_TIMEOUT)  # Set timeout for receiving
                     try:
                         data, addr = self.client_socket.recvfrom(1024)
                         message_ack = data.decode('ascii').split('|')  # Format: OPERATION|PAYLOAD
@@ -272,6 +277,9 @@ class SimpDaemon:
             except Exception as e:
                 print(f"Error sending message to client: {e}")
                 retries += 1
+
+            finally:
+                self.client_socket.settimeout(None)
 
         print(f"Failed to send message after {max_retries} attempts")
         self.client_socket.settimeout(None)  # Reset timeout
@@ -337,6 +345,9 @@ class SimpDaemon:
 
                 elif response[0] == "QUIT":
                     break
+            
+            finally:
+                self.daemon_socket.settimeout(None)
 
             # Check if the received datagram is a SYN
             if header_info and header_info.operation == Operation.SYN:
@@ -354,7 +365,7 @@ class SimpDaemon:
                 print(f"Sent SYN+ACK to {daemon_addr}.")
 
                 # Wait for ACK from the sender to complete the handshake
-                self.daemon_socket.settimeout(5)  # Set timeout for the response
+                self.daemon_socket.settimeout(self.SOCKET_TIMEOUT)  # Set timeout for the response
                 try:
                     ack_header_info, ack_data, ack_addr = self.receive_datagram()
                     if ack_header_info.operation == Operation.ACK and ack_addr == daemon_addr:
@@ -366,6 +377,9 @@ class SimpDaemon:
 
                 except socket.timeout:
                     print(f"Timeout waiting for ACK from {daemon_addr}. Restarting wait.")
+
+                finally:
+                    self.daemon_socket.settimeout(None)
 
             else:
                 print(f"Unexpected datagram from {daemon_addr}. Ignoring...")
@@ -476,13 +490,13 @@ class SimpDaemon:
         )
 
         # 2. Send SYN and wait for SYN + ACK from the receiver (try only 3 times to avoid infinite loop)
-        tries = 3
+        tries = self.MAX_RETRIES
         while tries > 0:
             try:
                 self.daemon_socket.sendto(syn_datagram, addr)
                 print(f"SYN sent to {addr} with sequence {sequence_number}.")
 
-                self.daemon_socket.settimeout(5)  # Set a timeout for the response
+                self.daemon_socket.settimeout(self.SOCKET_TIMEOUT)  # Set a timeout for the response
                 header_info, data, addr = self.receive_datagram()
 
                 # If the received operation is SYN + ACK
@@ -500,6 +514,9 @@ class SimpDaemon:
                 print(f"Timeout waiting for SYN+ACK from {addr}. resending SYN.")
                 # resend SYN
                 tries -= 1
+            
+            finally:
+                self.daemon_socket.settimeout(None)
 
         if tries == 0:
             print(f"Failed to establish connection with {addr}.")
@@ -536,7 +553,7 @@ class SimpDaemon:
             ""  # Empty payload
         )
 
-        self.daemon_socket.settimeout(5)  # Set timeout to 5 seconds for receiving
+        self.daemon_socket.settimeout(self.SOCKET_TIMEOUT)  # Set timeout to 5 seconds for receiving
         while True:
             try:
                 self.daemon_socket.sendto(response, addr)
@@ -554,6 +571,9 @@ class SimpDaemon:
             except socket.timeout:
                 # Timeout occurred, resend FIN
                 print(f"Timeout waiting for ACK from {addr}, resending FIN")
+
+            finally:
+                self.daemon_socket.settimeout(None)
 
         # self.available = True # in case of successful connection before
 
