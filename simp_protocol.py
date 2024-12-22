@@ -1,5 +1,5 @@
 from enum import Enum
-from simp_check_functions import *
+from simp_check_functions import calculate_checksum16
 
 # change values to match the assignment
 MAX_HEADER_SIZE = 39
@@ -102,13 +102,13 @@ class SimpProtocol:
         if isinstance(payload, ErrorCode):
             payload = payload.message().encode('ascii')  # if payload is instance of ErrorCode, convert error code to ascii message
 
-        datagram_type = datagram_type.to_bytes(1, byteorder='big')
-        operation = operation.to_bytes(1, byteorder='big')
-        sequence = sequence.to_bytes(1, byteorder='big')
+        datagram_type = datagram_type.to_bytes()
+        operation = operation.to_bytes()
+        sequence = sequence.to_bytes()
         user = user.encode('ascii').ljust(32, b'\x00')  # Pad username to 32 bytes
         payload = payload.encode('ascii') if isinstance(payload, str) else payload # Convert payload to bytes
         length = len(payload)
-        length = length.to_bytes(4, byteorder='big')
+        length = length.to_bytes(4, byteorder='big') # 4 bytes
 
         header = b''.join([datagram_type, operation, sequence, user, length])
 

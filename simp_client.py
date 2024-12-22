@@ -142,7 +142,7 @@ class Client:
         print(f"Chat request sent to {target_ip}.")
         self._send_message(f"CONNECTING|request: {target_ip}")  # Send a chat request to the daemon
 
-        print(f"Chat request sent!"
+        print(f"Chat request sent!\n"
               f"Waiting for response from {target_ip}...")
 
         response = self._receive_chat()
@@ -167,7 +167,7 @@ class Client:
         """
         Wait for incoming chat requests from other users.
         """
-
+        print("Waiting for incoming chat requests...")
         while True:
             response = self._receive_chat()
             if response[0] == "CONNECTING":
@@ -193,8 +193,6 @@ class Client:
         try:
 
             data, addr = self.socket.recvfrom(1024)
-
-            print("receiving.. ")
 
             if not data:  # Check if data is empty
                 return ["ERROR", "Received empty message"]
