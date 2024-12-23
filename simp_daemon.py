@@ -141,7 +141,7 @@ class SimpDaemon:
                 return self._get_requests(addr)
             else:
                 print("sending CONNECT")
-                return f"CONNECT|Welcome, {self.current_user}! You currently have no pending chat requests."
+                return f"CONNECT|Welcome, {self.current_user}! \nYou currently have no pending chat requests."
 
         elif operation == "CONNECTING":
             if not payload:
@@ -185,10 +185,10 @@ class SimpDaemon:
         chat_partner = self.get_chat_partner()
         chat_partner_addr = list(chat_partner.keys())[0]
         # Initial sequence number (alternate between 0 and 1 for retransmissions)
-        sequence_number = self.sequence_tracker.get(chat_partner_addr, 1)  # Default is 1
+        sequence_number = self.sequence_tracker.get(chat_partner_addr, 1)  # Default is 0
 
         # create chat datagram
-        response = protocol.create_datagram(
+        response = self.protocol.create_datagram(
                 HeaderType.CHAT,
                 Operation.CONST,
                 sequence_number,
@@ -291,7 +291,7 @@ class SimpDaemon:
         """
         Get the list of pending chat requests.
         """
-        requests = f"CONNECT|Welcome, {self.current_user}! You have pending chat requests from:\n"
+        requests = f"CONNECT|Welcome, {self.current_user}! \nYou have pending chat requests from:\n"
         for client_ip, username in self.chat_requests.items():
             requests += f"IP: {client_ip} | Username: {username}\n"
 
@@ -354,7 +354,7 @@ class SimpDaemon:
                 print(f"Received SYN from {daemon_addr}.")
 
                 # Respond with a SYN+ACK
-                syn_ack_datagram = protocol.create_datagram(
+                syn_ack_datagram = self.protocol.create_datagram(
                     HeaderType.CONTROL,
                     Operation.SYN.value | Operation.ACK.value,
                     1,  # Sequence number
@@ -391,57 +391,73 @@ class SimpDaemon:
         Send ACK for valid messages and ERR for invalid messages.
         Return datagram if valid, False otherwise
         """
-        # wait for incoming datagrams
-        data, addr = self.daemon_socket.recvfrom(1024)
+        try:
+            # wait for incoming datagrams
+            data, addr = self.daemon_socket.recvfrom(1024)
+            print(f"Received datagram from {addr}: {data}")
 
-        # check if the datagram is valid
-        header_info = check_header(data)
+            # check if the datagram is valid
+            header_info = check_header(data)
 
-        if not header_info.is_ok:
-            print(f"Error parsing datagram from {addr}: {header_info.code}")
-            error_response = protocol.create_datagram(
-                HeaderType.CONTROL,
-                Operation.ERR,
-                0,  # Sequence number
-                f"{self.current_user}",  # User
-                header_info.code  # Error message
-            )
-            self.daemon_socket.sendto(error_response, addr)
-            return False
+            if not header_info.is_ok:
+                print(f"Error parsing datagram from {addr}: {header_info.code}")
+                error_response = self.protocol.create_datagram(
+                    HeaderType.CONTROL,
+                    Operation.ERR,
+                    0,  # Always use 0 for error messages
+                    f"{self.current_user}",  # User
+                    header_info.code  # Error message
+                )
+                self.daemon_socket.sendto(error_response, addr)
+                return None, None, None
 
-        # Send ACK for non-control messages or messages that aren't already ACKs
-        if (header_info.type != HeaderType.CONTROL and header_info.operation != Operation.ACK):
-            ack_datagram = protocol.create_datagram(
-                HeaderType.CONTROL,
-                Operation.ACK,
-                header_info.sequence_number,  # Use same sequence number
-                f"{self.current_user}",
-                ""  # Empty payload
-            )
-            self.daemon_socket.sendto(ack_datagram, addr)
-            print(f"ACK sent for message {header_info.sequence_number}")
 
-        # Parse the datagram to extract the data and header info into a dictionary
-        data = protocol.parse_datagram(data)
+            # Don't check sequence for control messages during handshake
+            if (header_info.type != HeaderType.CONTROL or 
+                (header_info.operation != Operation.SYN and 
+                 header_info.operation != (Operation.SYN.value | Operation.ACK.value)) or
+                 header_info.operation != Operation.ACK):
+                
+                # Check if the sequence number is correct
+                expected_sequence = self.sequence_tracker.get(addr, 1)  # Default expected sequence is 1
+                if header_info.sequence_number != expected_sequence:
+                    print(f"Unexpected sequence number from {addr}. Expected {expected_sequence}, got {header_info.sequence_number}.")
+                    error_response = self.protocol.create_datagram(
+                        HeaderType.CONTROL,
+                        Operation.ERR,
+                        header_info.sequence_number,  # Use the same sequence number for error messages
+                        f"{self.current_user}",
+                        ErrorCode.WRONG_SEQUENCE
+                    )
+                    self.daemon_socket.sendto(error_response, addr)
+                    return None, None, None
 
-        # Check if the sequence number is correct
-        expected_sequence = self.sequence_tracker.get(addr, 1)  # Default expected sequence is 1
-        if header_info.sequence_number != expected_sequence:
-            print(f"Unexpected sequence number from {addr}. Expected {expected_sequence}, got {header_info.sequence_number}.")
-            error_response = protocol.create_datagram(
-                HeaderType.CONTROL,
-                Operation.ERR,
-                0,
-                f"{self.current_user}",
-                "Invalid sequence number."
-            )
-            self.daemon_socket.sendto(error_response, addr)
-            return False
+                # Update the expected sequence number
+                self.sequence_tracker[addr] = 1 - expected_sequence  # Toggle between 0 and 1
 
-        # Update the expected sequence number
-        self.sequence_tracker[addr] = 1 - expected_sequence  # Toggle between 0 and 1
+            # Parse the datagram to extract the data and header info into a dictionary
+            data = self.protocol.parse_datagram(data)
 
-        return header_info, data, addr
+            
+            # Send ACK for non-control messages or messages that aren't already ACKs
+            if (header_info.type != HeaderType.CONTROL and header_info.operation != Operation.ACK):
+                ack_datagram = self.protocol.create_datagram(
+                    HeaderType.CONTROL,
+                    Operation.ACK,
+                    header_info.sequence_number,  # Use same sequence number
+                    f"{self.current_user}",
+                    ""  # Empty payload
+                )
+                self.daemon_socket.sendto(ack_datagram, addr)
+                print(f"ACK sent for message {header_info.sequence_number}")
+
+            return header_info, data, addr
+
+        except Exception as e:
+            print(f"Error receiving datagram: {e}")
+            return None, None, None
+
+        
 
     def handle_message(self,header_info, data, addr):
         """
@@ -461,7 +477,7 @@ class SimpDaemon:
         else:
             print(f"Busy; automatically rejecting request from {addr}")
             # Respond with ERR followed by FIN datagram (close connection)
-            response = protocol.create_datagram(
+            response = self.protocol.create_datagram(
                 HeaderType.CONTROL,
                 Operation.ERR.value,
                 1,  # Sequence number
@@ -477,66 +493,77 @@ class SimpDaemon:
         """
         Perform the three-way handshake with the other daemon.
         """
+        # Convert string address to tuple with port, if not already a tuple
+        target_addr = (addr, self.port_to_daemon) if isinstance(addr, str) else addr
+
         # 1. Prepare the SYN datagram
         print(f"Starting three-way handshake with {addr}...")
         sequence_number = 1  # Initial sequence number
 
-        syn_datagram = protocol.create_datagram(
+        syn_datagram = self.protocol.create_datagram(
             HeaderType.CONTROL,
             Operation.SYN,
-            sequence_number,
+            sequence_number,  # 1 for the first SYN
             f"{self.current_user}",
             ""  # Empty payload
         )
+
 
         # 2. Send SYN and wait for SYN + ACK from the receiver (try only 3 times to avoid infinite loop)
         tries = self.MAX_RETRIES
         while tries > 0:
             try:
-                self.daemon_socket.sendto(syn_datagram, addr)
-                print(f"SYN sent to {addr} with sequence {sequence_number}.")
+                print(f"Sending SYN datagram to {target_addr} with sequence {sequence_number}.")
+                self.daemon_socket.sendto(syn_datagram, target_addr)
+                print(f"SYN sent to {target_addr} with sequence {sequence_number}.")
 
                 self.daemon_socket.settimeout(self.SOCKET_TIMEOUT)  # Set a timeout for the response
-                header_info, data, addr = self.receive_datagram()
+                header_info, data, received_addr = self.receive_datagram()
 
+                print(f"Does this equal? {received_addr} = {target_addr}")
                 # If the received operation is SYN + ACK
                 if header_info and header_info.operation == (Operation.SYN.value | Operation.ACK.value) and header_info.sequence_number == sequence_number:
-                    print(f"SYN+ACK received from {addr}.")
-                    break
+                    print(f"SYN+ACK received from {received_addr}.")
+                    
+                    # 3. Send final ACK with incremented sequence number
+                    ack_datagram = self.protocol.create_datagram(
+                        HeaderType.CONTROL,
+                        Operation.ACK,
+                        sequence_number,  # use the same sequence number for ACK
+                        f"{self.current_user}",
+                        ""
+                    )
+                    self.daemon_socket.sendto(ack_datagram, target_addr)
+                    print(f"ACK sent to {target_addr}. Handshake complete.")
+
+                    # Initialize sequence tracking
+                    self.sequence_tracker[target_addr] = 0
+                    self.set_chat_partner(addr, data['user'])
+                    return True, data['user']  # return the chat partner's username
+
                 elif header_info and header_info.operation == Operation.ERR:
-                    print(f"Error received from {addr}: {data}")
+                    print(f"Error received from {received_addr}: {data}")
                     return False, data
+                
                 else:
-                    print(f"Unexpected datagram received from {addr}, resending SYN.")
-                    self.daemon_socket.sendto(syn_datagram, addr)
+                    print(f"Unexpected datagram received from {target_addr}, resending SYN.")
+                    tries -= 1
+                    continue # resend SYN
 
             except socket.timeout:
-                print(f"Timeout waiting for SYN+ACK from {addr}. resending SYN.")
+                print(f"Timeout waiting for SYN+ACK from {target_addr}. resending SYN.")
                 # resend SYN
                 tries -= 1
-            
+                continue
+
             finally:
                 self.daemon_socket.settimeout(None)
 
         if tries == 0:
-            print(f"Failed to establish connection with {addr}.")
+            print(f"Failed to establish connection with {target_addr}.")
             return False, "Connection failed."
 
-        # 3. Sender replies with ACK
-        ack_datagram = protocol.create_datagram(
-            HeaderType.CONTROL,
-            Operation.ACK,
-            sequence_number,  # Sequence number
-            f"{self.current_user}",  # User
-            ""  # Empty payload
-        )
-        self.daemon_socket.sendto(ack_datagram, addr)
-        print(f"ACK sent to {addr}. Handshake complete.")
-        self.sequence_tracker[addr] = 1 - sequence_number  # Initialize expected sequence number for chat partner
-
-        # set the chat partner
-        self.set_chat_partner(addr, data['user'])
-        return True, data['user']  # return the chat partner's username
+    
 
     def closing_connection(self, addr):
         """
@@ -545,7 +572,7 @@ class SimpDaemon:
         Close the connection.
         """
         # create FIN datagram
-        response = protocol.create_datagram(
+        response = self.protocol.create_datagram(
             HeaderType.CONTROL,
             Operation.FIN,
             1,  # Sequence number
@@ -581,36 +608,42 @@ class SimpDaemon:
         """
         Handles communication with other daemons on port 7777.
         """
-        protocol = SimpProtocol()  # Create an instance of SimpProtocol
 
         print(f"Listening for daemon communication on {self.port_to_daemon}...")
 
         # build and run daemon connection
         while self.running:
-            header_info, data, addr = self.receive_datagram()
+            try:
+                header_info, data, addr = self.receive_datagram()
+            
+                # Skip if we received None (invalid datagram)
+                if header_info is None:
+                    continue
 
-            if header_info:  # check if the datagram is valid (False if not)
-                try:
-                    # handle the message
-                    self.handle_message(header_info, data, addr)
+                # handle the message
+                self.handle_message(header_info, data, addr)
 
-                except Exception as e:
-                    print(f"Error handling message from {addr}: {e}")
-                    error_response = protocol.create_datagram(
-                            #header_info,  # Header info
+            except Exception as e:
+                print(f"Error handling message from {addr}: {e}")
+                error_response = self.protocol.create_datagram(
                             HeaderType.CONTROL,
                             Operation.ERR,
                             0,  # Sequence number
                             f"Daemon {daemon_ip}",  # User
                             header_info.code  # Error message
                         )
-                    self.daemon_socket.sendto(error_response, addr)
+                self.daemon_socket.sendto(error_response, addr)
+                continue
+
 
     def stop(self):
         """
         Stop the daemon gracefully.
         """
         print("Shutting down daemon...")
+        self.current_user = None
+        self.chat_partner = {}
+        self.chat_requests = {}
         self.running = False
         self.client_socket.close()
         self.daemon_socket.close()

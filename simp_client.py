@@ -36,7 +36,7 @@ class Client:
             if response[0] == "PONG":
                 print(f"Connected to daemon {self.daemon_ip}!")
             else:
-                print(f"Error in connecting: {response}")
+                print(f"Error in connecting: {response[1]}")
                 exit(1)
 
             # 3. If the response is positive, proceed with the client setup
@@ -48,7 +48,7 @@ class Client:
 
             print("received", response)
             print(response[1])  # Print welcome message and pending chat requests
-            if response[1] == f"Welcome, {self.username}! You currently have no pending chat requests.":
+            if response[1] == f"Welcome, {self.username}! \nYou currently have no pending chat requests.":
                 return response
             else:
                 while response[0] != "CONNECTING":
@@ -82,7 +82,7 @@ class Client:
                     print("ACK received.")
                     return  # Message sent successfully and ACK received
                 else:
-                    print(f"Unexpected response: {response_ack}")
+                    print(f"Unexpected response: {response_ack[1]}")
                     retries += 1
 
             except socket.timeout:
@@ -103,7 +103,7 @@ class Client:
         """
         response = self.connect_to_daemon()  # Connect to the daemon before starting
 
-        if response[1] == f"Welcome, {self.username}! You currently have no pending chat requests." or response == "CONNECTING|":  # not accepted requests
+        if response[1] == f"Welcome, {self.username}! \nYou currently have no pending chat requests." or response == "CONNECTING|":  # not accepted requests
             self.options()
         else:
             self.start_chat()
@@ -146,6 +146,9 @@ class Client:
               f"Waiting for response from {target_ip}...")
 
         response = self._receive_chat()
+        if response[0] == "ERROR":
+            print(f"Error: {response[1]}")
+            return
         self.chat_partner = response[1].split(": ")[1]
         print(response[1])
 

@@ -33,6 +33,7 @@ class ErrorCode(Enum):
     INVALID_USER = 6
     INVALID_OPERATION = 7
     BUSY_DAEMON = 8
+    WRONG_SEQUENCE = 9
 
     def message(self):
         if self == ErrorCode.OK:
@@ -53,6 +54,8 @@ class ErrorCode(Enum):
             return "Invalid operation"
         elif self == ErrorCode.BUSY_DAEMON:
             return "User already in another chat"
+        elif self == ErrorCode.WRONG_SEQUENCE:
+            return "Wrong sequence number"
 
 
 class Operation(Enum):
@@ -86,7 +89,6 @@ class HeaderInfo:
 
     def __init__(self):
         self.is_ok = False
-        self.type = HeaderType.OK
         self.code = ErrorCode.OK
 
 
@@ -102,13 +104,16 @@ class SimpProtocol:
             payload = payload.message().encode('ascii')  # if payload is instance of ErrorCode, convert error code to ascii message
 
         datagram_type = datagram_type.to_bytes()
+        print(f"Datagram type: {datagram_type}")
         operation = operation.to_bytes()
-        sequence = sequence.to_bytes()
+        sequence = sequence.to_bytes(1, byteorder='big') 
         user = user.encode('ascii').ljust(32, b'\x00')  # Pad username to 32 bytes
-        payload = payload.encode('ascii') if isinstance(payload, str) else payload # Convert payload to bytes
+        payload = payload.encode('ascii') if isinstance(payload, str) else payload # Convert payload to bytes if not already
+        print(f"Payload: {payload}")
+
         length = len(payload)
         length = length.to_bytes(4, byteorder='big') # 4 bytes
-
+        
         header = b''.join([datagram_type, operation, sequence, user, length])
 
         # adding checksum to header
@@ -124,10 +129,6 @@ class SimpProtocol:
 
         header = data[:MAX_HEADER_SIZE]  # 39 bytes
         payload = data[MAX_HEADER_SIZE:-2]  # this excludes checksum bytes
-
-        # validating the header
-        if not self.validate_header(header):
-            raise ValueError("Invalid header format/fields!")
 
         # parsing header and payload
         datagram_type = int(header[0])

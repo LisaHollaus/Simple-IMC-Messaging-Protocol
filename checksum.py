@@ -19,4 +19,4 @@ def calculate_checksum16(bytes_data: bytes) -> bytes: # using own checksum funct
     checksum = (checksum & 0xFFFF) + (checksum >> 16)  # any remaining carry after processing all 16bit should be added to checksum
     checksum = checksum ^ 0xFFFF  # negating the result
 
-    return checksum
+    return checksum.to_bytes(2, byteorder='big')
