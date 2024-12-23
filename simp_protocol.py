@@ -1,6 +1,5 @@
 from enum import Enum
-from simp_check_functions import calculate_checksum16
-
+from checksum import calculate_checksum16
 # change values to match the assignment
 MAX_HEADER_SIZE = 39
 MESSAGE_TYPE_SIZE = 1
