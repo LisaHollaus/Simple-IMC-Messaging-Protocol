@@ -26,31 +26,31 @@ def check_header(message: bytes) -> HeaderInfo:
     :return: HeaderInfo object with the result of the check
     """
     header_info = HeaderInfo()
-
-    if len(message) <= MAX_HEADER_SIZE: # check if the msg is too short
-        header_info.code = ErrorCode.MESSAGE_TOO_SHORT
-        return header_info
-
     header_info.type = protocol.get_message_type(message)  # validate and get the message type
-    if header_info.type is HeaderType.UNKNOWN:
+    operation = protocol.get_operation(message, header_info.type)  # validate the operation field
+    sequence_number = protocol.get_sequence_number(message)
+    user = message[3:35].decode('ascii').strip('\x00')  # validate the user field
+    payload_size = protocol.get_payload_size(message)  # validate and get the payload size
+
+
+    if len(message) < MAX_HEADER_SIZE: # check if the msg is too short (less than 39 bytes)
+        header_info.code = ErrorCode.MESSAGE_TOO_SHORT
+
+    elif header_info.type is HeaderType.UNKNOWN:
         header_info.code = ErrorCode.UNKNOWN_MESSAGE
 
-    operation = protocol.get_operation(message, header_info.type)  # validate the operation field
-    if operation is None:
+    elif operation is None:
         header_info.code = ErrorCode.INVALID_OPERATION
 
-    sequence_number = protocol.get_sequence_number(message)
-    if sequence_number not in [0, 1]:
+    elif sequence_number not in [0, 1]:
         header_info.code = ErrorCode.INVALID_OPERATION
 
-    user = message[3:35].decode('ascii').strip('\x00')  # validate the user field
-    if not user:
+    elif not user:
         header_info.code = ErrorCode.INVALID_USER
 
-    payload_size = protocol.get_payload_size(message)  # validate and get the payload size
-    if payload_size > MAX_STRING_PAYLOAD_SIZE:
+    elif payload_size > MAX_STRING_PAYLOAD_SIZE:
         header_info.code = ErrorCode.MESSAGE_TOO_LONG
-    elif payload_size == 0:
+    elif payload_size == 0 and header_info.type != HeaderType.CONTROL:
         header_info.code = ErrorCode.MESSAGE_TOO_SHORT
 
     header = message[:MAX_HEADER_SIZE]
@@ -63,7 +63,7 @@ def check_header(message: bytes) -> HeaderInfo:
         header_info.code = ErrorCode.WRONG_PAYLOAD
 
     # Final check: If no errors were set, mark as OK
-    if header_info.code == ErrorCode.OK:
+    if header_info.code == ErrorCode.OK:  # ErrorCode.OK is default
         header_info.is_ok = True
 
     header_info.operation = operation

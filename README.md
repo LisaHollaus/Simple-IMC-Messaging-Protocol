@@ -52,3 +52,4 @@ Each message will have a simple format: OPERATION|PAYLOAD
 ### Additional Notes on our implementation approach:
 - We added a checksum to the protocol to ensure the integrity of the messages between daemon and daemon.
 - We assumed the client knows the IP address of the users daemon he wants to connect to, so we did not implement a discovery mechanism (example: Database).
+- We added a timeout of 30 seconds for the chat partner to respond until the client gets asked again if he wants to keep on waiting or quit, to give the client the option to quit 
