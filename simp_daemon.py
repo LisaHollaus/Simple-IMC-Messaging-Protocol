@@ -327,66 +327,82 @@ class SimpDaemon:
         Wait for incoming chat requests (SYN) from other users (daemon).
         Periodically check with the user if they want to keep waiting.
         """
-        while True:
+        keep_waiting = True
+        while keep_waiting:
+            print(f"Waiting for chat partner...")
             try:
                 self.daemon_socket.settimeout(30)  # Set a timeout for the incoming chat requests
                 # Wait to receive a datagram from another daemon
                 header_info, data, daemon_addr = self.receive_datagram()
 
+                # Check if the received datagram is a SYN
+                if header_info and header_info.operation == Operation.SYN:
+                    print(f"Received SYN from {daemon_addr}.")
+
+                    # Respond with a SYN+ACK
+                    syn_ack_datagram = self.protocol.create_datagram(
+                        HeaderType.CONTROL,
+                        Operation.SYN_ACK,
+                        header_info.sequence_number,
+                        f"{self.current_user}",
+                        ""
+                    )
+                    self.daemon_socket.sendto(syn_ack_datagram, daemon_addr)
+                    print(f"Sent SYN+ACK to {daemon_addr}.")
+
+                    # Wait for ACK from the sender
+                    self.daemon_socket.settimeout(self.SOCKET_TIMEOUT)
+                    try:
+                        ack_header_info, ack_data, ack_addr = self.receive_datagram()
+                        if ack_header_info and ack_header_info.operation == Operation.ACK and ack_addr == daemon_addr:
+                            print(f"ACK received from {daemon_addr}. Handshake complete.")
+                            # Set the chat partner and exit
+                            self.set_chat_partner(daemon_addr[0], data['user'])
+                            return
+                    except socket.timeout:
+                        print(f"Timeout waiting for ACK from {daemon_addr}.")
+                        continue
+                
+                else:
+                    print(f"Unexpected datagram received from {daemon_addr}: {header_info}")
+                    continue
+
             except socket.timeout:
                 print("No chat requests received.")
-                # ask the user if they want to keep waiting
+                # Ask the user if they want to keep waiting
                 message = "ERROR|No chat requests received. Do you want to keep waiting? (YES/NO)"
                 self._send_message_client(message, addr)
 
-                # receive the response from the client
-                data, addr = self.client_socket.recvfrom(1024)
-                response = data.decode('ascii').split('|')
+                # Receive the response from the client
+                try:
+                    self.client_socket.settimeout(30)
+                    data, client_addr = self.client_socket.recvfrom(1024)
+                    response = data.decode('ascii').split('|')
 
-                if response[0] == "CONNECTING":
-                    # recall the function to wait for chat partner
-                    self.wait_for_chat_partner(addr)
-
-                elif response[0] == "QUIT":
+                    if response[0] == "CONNECTING":
+                        # Continue waiting
+                        continue
+                    elif response[0] == "QUIT":
+                        keep_waiting = False
+                        break
+                except socket.timeout:
+                    print("No response from client, stopping wait.")
+                    keep_waiting = False
                     break
-            
+
+            except Exception as e:
+                print(f"Error in wait_for_chat_partner: {e}")
+                keep_waiting = False
+                break
+
             finally:
                 self.daemon_socket.settimeout(None)
+                self.client_socket.settimeout(None)
 
-            # Check if the received datagram is a SYN
-            if header_info and header_info.operation == Operation.SYN:
-                print(f"Received SYN from {daemon_addr}.")
+        # If we exit the loop without finding a partner
+        self.available = True
+        return
 
-                # Respond with a SYN+ACK
-                syn_ack_datagram = self.protocol.create_datagram(
-                    HeaderType.CONTROL,
-                    Operation.SYN.value | Operation.ACK.value,
-                    header_info.sequence_number,  # Use the same sequence number
-                    f"{self.current_user}",
-                    ""  # Empty payload
-                )
-                self.daemon_socket.sendto(syn_ack_datagram, daemon_addr)
-                print(f"Sent SYN+ACK to {daemon_addr}.")
-
-                # Wait for ACK from the sender to complete the handshake
-                self.daemon_socket.settimeout(self.SOCKET_TIMEOUT)  # Set timeout for the response
-                try:
-                    ack_header_info, ack_data, ack_addr = self.receive_datagram()
-                    if ack_header_info.operation == Operation.ACK and ack_addr == daemon_addr:
-                        print(f"ACK received from {daemon_addr}. Handshake complete.")
-
-                        # Set the chat partner and break the loop
-                        self.set_chat_partner(daemon_addr[0], data['user'])
-                        return  # Exit the function after a successful handshake
-
-                except socket.timeout:
-                    print(f"Timeout waiting for ACK from {daemon_addr}. Restarting wait.")
-
-                finally:
-                    self.daemon_socket.settimeout(None)
-
-            else:
-                print(f"Unexpected datagram from {daemon_addr}. Ignoring...")
 
     def receive_datagram(self):
         """
@@ -421,7 +437,7 @@ class SimpDaemon:
                     header_info.code  # Error message
                 )
                 self.daemon_socket.sendto(error_response, addr)
-                return None, None, None
+                return header_info, data, addr
 
             # Check if the sequence number is correct
             if header_info.sequence_number != expected_sequence:
@@ -436,7 +452,7 @@ class SimpDaemon:
                         ErrorCode.WRONG_SEQUENCE
                 )
                 self.daemon_socket.sendto(error_response, addr)
-                return None, None, None
+                return header_info, data, addr
 
             # Update the expected sequence number
             self.sequence_tracker[ip] = 1 - expected_sequence  # Toggle between 0 and 1
@@ -464,24 +480,46 @@ class SimpDaemon:
 
         except Exception as e:
             print(f"Error receiving datagram: {e}")
-            return None, None, None
+            return header_info, data, addr
 
         
 
-    def handle_message(self,header_info, data, addr):
+    def handle_message_daemons(self, header_info, data, addr):
         """
         Process incoming messages and respond accordingly.
         """
+        # skip if the header_info is None
+        if not header_info or not data or not addr:
+            return
+        
         # Don't process ACKs here as they're handled in receive_datagram
         if header_info.operation == Operation.ACK:
             return
+        
+        # For error messages, just log and return
+        if header_info.operation == Operation.ERR:
+            print(f"Received error: {data['payload']}")
+            return
 
         # Logic for handling chat requests from other daemons , when client is not busy (SYN)
-        if not self.chat_partner and header_info.operation == Operation.SYN:
+        if header_info.operation == Operation.SYN:
             print(f"Received chat request from {addr}")
 
-            # Save the chat request for later (handled by client loop)
+            # Save the chat request 
             self.chat_requests[addr[0]] = data['user']  # Save the chat request {client_ip: username}
+            print(f"Chat request saved for {addr[0]}: {data['user']}")
+
+            # send SYN+ACK to the client if the client is not in a chat already
+            if not self.chat_partner:
+                syn_ack = self.protocol.create_datagram(
+                    HeaderType.CONTROL,
+                    Operation.SYN_ACK,
+                    header_info.sequence_number,
+                    self.current_user,
+                    ""
+                )
+            self.daemon_socket.sendto(syn_ack, addr)
+            print(f"SYN+ACK sent to {addr}")
 
         else:
             print(f"Busy; automatically rejecting request from {addr}")
@@ -504,15 +542,14 @@ class SimpDaemon:
         """
         # Convert string address to tuple with port, if not already a tuple
         target_addr = (addr, self.port_to_daemon) if isinstance(addr, str) else addr
-
-        # 1. Prepare the SYN datagram
         print(f"Starting three-way handshake with {addr}...")
 
         # Initialize sequence tracking
         ip = target_addr[0] if isinstance(target_addr, tuple) else target_addr
         self.sequence_tracker[ip] = 0
         sequence_number = self.sequence_tracker[ip]
-
+        
+        # 1. Prepare the SYN datagram
         syn_datagram = self.protocol.create_datagram(
             HeaderType.CONTROL,
             Operation.SYN,
@@ -520,7 +557,6 @@ class SimpDaemon:
             f"{self.current_user}",
             ""  # Empty payload
         )
-
 
         # 2. Send SYN and wait for SYN + ACK from the receiver (try only 3 times to avoid infinite loop)
         tries = self.MAX_RETRIES
@@ -536,7 +572,7 @@ class SimpDaemon:
                 print(f"Does this equal? {received_addr} = {target_addr}")
 
                 # If the received operation is SYN + ACK with the same sequence number as the sent SYN
-                if header_info and header_info.operation == (Operation.SYN.value | Operation.ACK.value) and header_info.sequence_number == sequence_number:
+                if header_info.operation == (Operation.SYN.value | Operation.ACK.value) and header_info.sequence_number == sequence_number:
                     print(f"SYN+ACK received from {received_addr}.")
                     
                     # 3. Send final ACK with incremented sequence number
@@ -633,7 +669,7 @@ class SimpDaemon:
                     continue
 
                 # handle the message
-                self.handle_message(header_info, data, addr)
+                self.handle_message_daemons(header_info, data, addr)
 
             except Exception as e:
                 print(f"Error handling message from {addr}: {e}")

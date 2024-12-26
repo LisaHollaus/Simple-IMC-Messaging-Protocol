@@ -65,6 +65,7 @@ class Operation(Enum):
     ERR = 1
     SYN = 2
     ACK = 4
+    SYN_ACK = 6 # SYN + ACK
     FIN = 8
 
     def to_bytes(self):
@@ -76,6 +77,8 @@ class Operation(Enum):
             return int(2).to_bytes(1, byteorder='big')
         elif self == Operation.ACK:
             return int(4).to_bytes(1, byteorder='big')
+        elif self == Operation.SYN_ACK:
+            return int(6).to_bytes(1, byteorder='big')
         elif self == Operation.FIN:
             return int(8).to_bytes(1, byteorder='big')
 

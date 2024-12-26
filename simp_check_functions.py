@@ -25,6 +25,8 @@ def check_header(message: bytes) -> HeaderInfo:
     :param message: The message to check
     :return: HeaderInfo object with the result of the check
     """
+
+    print(f"Checking header: {message}")
     header_info = HeaderInfo()
     header_info.type = protocol.get_message_type(message)  # validate and get the message type
     operation = protocol.get_operation(message, header_info.type)  # validate the operation field
@@ -32,16 +34,17 @@ def check_header(message: bytes) -> HeaderInfo:
     user = message[3:35].decode('ascii').strip('\x00')  # validate the user field
     payload_size = protocol.get_payload_size(message)  # validate and get the payload size
 
+    print(f"Header info: {header_info}")
 
     if len(message) < MAX_HEADER_SIZE: # check if the msg is too short (less than 39 bytes)
         header_info.code = ErrorCode.MESSAGE_TOO_SHORT
 
     elif header_info.type is HeaderType.UNKNOWN:
         header_info.code = ErrorCode.UNKNOWN_MESSAGE
-
+    
     elif operation is None:
         header_info.code = ErrorCode.INVALID_OPERATION
-
+    
     elif sequence_number not in [0, 1]:
         header_info.code = ErrorCode.INVALID_OPERATION
 
@@ -50,9 +53,10 @@ def check_header(message: bytes) -> HeaderInfo:
 
     elif payload_size > MAX_STRING_PAYLOAD_SIZE:
         header_info.code = ErrorCode.MESSAGE_TOO_LONG
+
     elif payload_size == 0 and header_info.type != HeaderType.CONTROL:
         header_info.code = ErrorCode.MESSAGE_TOO_SHORT
-
+    print(f"Header checks done")
     header = message[:MAX_HEADER_SIZE]
     payload = message[MAX_HEADER_SIZE:-2]
     received_checksum = message[-2:]
@@ -68,5 +72,6 @@ def check_header(message: bytes) -> HeaderInfo:
 
     header_info.operation = operation
     header_info.sequence_number = sequence_number
+    print("All checks done")
     return header_info
 
