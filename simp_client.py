@@ -171,7 +171,11 @@ class Client:
         Wait for incoming chat requests from other users.
         """
         print("Waiting for incoming chat requests...")
+        # let the daemon handle the chat request
+        self._send_message("CONNECTING|")
+
         while True:
+
             response = self._receive_chat()
             if response[0] == "CONNECTING":
                 print(f"Incoming chat request from {response[1]}")

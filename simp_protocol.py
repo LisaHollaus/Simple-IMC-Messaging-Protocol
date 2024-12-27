@@ -107,12 +107,10 @@ class SimpProtocol:
             payload = payload.message().encode('ascii')  # if payload is instance of ErrorCode, convert error code to ascii message
 
         datagram_type = datagram_type.to_bytes()
-        print(f"Datagram type: {datagram_type}")
         operation = operation.to_bytes()
         sequence = sequence.to_bytes(1, byteorder='big') 
         user = user.encode('ascii').ljust(32, b'\x00')  # Pad username to 32 bytes
         payload = payload.encode('ascii') if isinstance(payload, str) else payload # Convert payload to bytes if not already
-        print(f"Payload: {payload}")
 
         length = len(payload)
         length = length.to_bytes(4, byteorder='big') # 4 bytes
@@ -182,6 +180,8 @@ class SimpProtocol:
                 return Operation.ACK
             elif operation_byte == 8:
                 return Operation.FIN
+            elif operation_byte == 6:
+                return Operation.SYN_ACK
 
     def get_sequence_number(self, message):
         """

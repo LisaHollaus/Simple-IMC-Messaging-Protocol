@@ -34,7 +34,6 @@ def check_header(message: bytes) -> HeaderInfo:
     user = message[3:35].decode('ascii').strip('\x00')  # validate the user field
     payload_size = protocol.get_payload_size(message)  # validate and get the payload size
 
-    print(f"Header info: {header_info}")
 
     if len(message) < MAX_HEADER_SIZE: # check if the msg is too short (less than 39 bytes)
         header_info.code = ErrorCode.MESSAGE_TOO_SHORT
@@ -56,7 +55,8 @@ def check_header(message: bytes) -> HeaderInfo:
 
     elif payload_size == 0 and header_info.type != HeaderType.CONTROL:
         header_info.code = ErrorCode.MESSAGE_TOO_SHORT
-    print(f"Header checks done")
+
+    print(f"Header info code: {header_info.code}")
     header = message[:MAX_HEADER_SIZE]
     payload = message[MAX_HEADER_SIZE:-2]
     received_checksum = message[-2:]
