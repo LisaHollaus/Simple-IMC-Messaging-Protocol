@@ -6,7 +6,7 @@ from simp_check_functions import *
 
 
 class SimpDaemon:
-    SOCKET_TIMEOUT = 5
+    SOCKET_TIMEOUT = 3000
     MAX_RETRIES = 3
 
     def __init__(self, daemon_ip):
@@ -54,12 +54,12 @@ class SimpDaemon:
 
         # Create threads
         client_thread = threading.Thread(target=self.listen_for_client_connections, daemon=True)  # Listen for new connections
-        # chat_thread = threading.Thread(target=self.listen_for_client_connections, daemon=True)  # Handle the current chat session
+        chat_thread = threading.Thread(target=self.listen_for_client_connections, daemon=True)  # Handle the current chat session
         daemon_thread = threading.Thread(target=self.listen_to_daemons, daemon=True)  # Listen to other daemons and handle chat requests
 
         # Start threads
         client_thread.start()
-        # chat_thread.start()
+        chat_thread.start()
         daemon_thread.start()
 
         # Keep the main thread running
@@ -464,15 +464,13 @@ class SimpDaemon:
             # Update the expected sequence number
             self.sequence_tracker[ip] = 1 - expected_sequence  # Toggle between 0 and 1
 
-            
-            
 
             # Parse the datagram to extract the data and header info into a dictionary
             data = self.protocol.parse_datagram(data)
 
             
-            # Send ACK for non-control messages or messages that aren't already ACKs
-            if (header_info.type != HeaderType.CONTROL and header_info.operation != Operation.ACK):
+            # Send ACK for non-control messages or messages that aren't already ACKs (except for SYN_ACK, which is handled by the three-way handshake)
+            if (header_info.type != HeaderType.CONTROL and header_info.operation != Operation.ACK and header_info.operation != Operation.SYN_ACK):
                 ack_datagram = self.protocol.create_datagram(
                     HeaderType.CONTROL,
                     Operation.ACK,
@@ -576,7 +574,7 @@ class SimpDaemon:
                 self.daemon_socket.settimeout(self.SOCKET_TIMEOUT)  # Set a timeout for the response
                 header_info, data, received_addr = self.receive_datagram()
 
-                print(f"Does this equal? {received_addr} = {target_addr}")
+                #print(f"Does this equal? {received_addr} = {target_addr}")
 
                 # If the received operation is SYN + ACK with the same sequence number as the sent SYN
                 if header_info.operation == (Operation.SYN.value | Operation.ACK.value) and header_info.sequence_number == sequence_number:
@@ -586,7 +584,7 @@ class SimpDaemon:
                     ack_datagram = self.protocol.create_datagram(
                         HeaderType.CONTROL,
                         Operation.ACK,
-                        sequence_number + 1,  # use the same sequence number for ACK
+                        header_info.sequence_number,  # use the same sequence number for ACK
                         self.current_user,
                         ""
                     )

@@ -93,6 +93,7 @@ class HeaderInfo:
     def __init__(self):
         self.is_ok = False
         self.code = ErrorCode.OK
+        self.type = HeaderType.UNKNOWN
 
 
 class SimpProtocol:
