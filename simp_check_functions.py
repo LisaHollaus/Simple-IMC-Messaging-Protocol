@@ -26,7 +26,7 @@ def check_header(message: bytes) -> HeaderInfo:
     :return: HeaderInfo object with the result of the check
     """
 
-    print(f"Checking header: {message}")
+    print(f"Checking header: ")
     header_info = HeaderInfo()
     header_info.type = protocol.get_message_type(message)  # validate and get the message type
     operation = protocol.get_operation(message, header_info.type)  # validate the operation field
@@ -56,7 +56,7 @@ def check_header(message: bytes) -> HeaderInfo:
     elif payload_size == 0 and header_info.type != HeaderType.CONTROL:
         header_info.code = ErrorCode.MESSAGE_TOO_SHORT
 
-    print(f"Header info code: {header_info.code}")
+    print(f"Header info code: {header_info.code,}")
     header = message[:MAX_HEADER_SIZE]
     payload = message[MAX_HEADER_SIZE:-2]
     received_checksum = message[-2:]
@@ -72,6 +72,6 @@ def check_header(message: bytes) -> HeaderInfo:
 
     header_info.operation = operation
     header_info.sequence_number = sequence_number
-    print("All checks done")
+    print("All checks done, header info: ", header_info.code, header_info.operation, header_info.sequence_number)
     return header_info
 
