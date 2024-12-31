@@ -34,7 +34,8 @@ class SimpDaemon:
         self.chat_requests = {}  # Track pending chat requests {client_ip: username}
         self.sequence_tracker = {}  # Track expected sequence numbers for chat partners {addr: expected_sequence_number}
 
-        self.in_chat = False  # Track whether the daemon is in a chat
+        #self.in_chat = False  # Track whether the daemon is in a chat
+
     def set_chat_partner(self, addr, user):
         with self.lock:
             self.chat_partner[addr] = user
@@ -145,11 +146,23 @@ class SimpDaemon:
         elif operation == "CONNECTING":
             if not payload:
                 # empty payload = waiting for chat partner
-                response = self.wait_for_chat_partner(addr)
-                if response:
-                    return response
-                else:
-                    return "ERROR|Something went wrong, please try again."
+                #response = self.wait_for_chat_partner(addr)
+                print("waiting for chat partner")
+                print("going into while loop in handle_message_client - waitung client to connect")
+                
+                while not self.chat_partner:
+                    pass
+
+                print("chat partner connected")
+
+                chat_partner_ip = list(self.chat_partner.keys())[0]
+                chat_partner_username = self.chat_partner[chat_partner_ip]
+                return f"CONNECTING|Connected to user: {chat_partner_username}"
+
+                #if response:
+                #    return response
+                #else:
+                #    return "ERROR|Something went wrong, please try again."
 
             else:
                 # send chat request to the chat partner
@@ -157,11 +170,23 @@ class SimpDaemon:
 
                 # try to connect to the chat partner
                 #connected, msg = self.three_way_handshake(target_ip)  # return two values (bool, error/username)
-                connected = self.three_way_handshake(target_ip)
-                if connected:
-                    return f"CONNECTING|Connected to user: {self.chat_partner[target_ip]}"
-                else:
-                    return f"ERROR| {self.chat_partner[target_ip]}"
+                self.three_way_handshake(target_ip)
+
+                print("going into while loop in handle_message_client")
+
+                # wait for three way handshake to finish
+                while not self.chat_partner:
+                    pass
+
+                print(f"sending CONNECTING to {addr}")
+
+                return f"CONNECTING|Connected to user: {self.chat_partner[target_ip]}" # username
+
+
+                #if connected:
+                 #   return f"CONNECTING|Connected to user: {self.chat_partner[target_ip]}"
+                #else:
+                 #   return f"ERROR| {self.chat_partner[target_ip]}"
 
         elif operation == "CHAT":
             if self.get_chat_partner():
@@ -186,9 +211,10 @@ class SimpDaemon:
         Receive answer and send it back to the client
         """
         chat_partner = self.get_chat_partner()
-        chat_partner_addr = list(chat_partner.keys())[0]
-        # Initial sequence number (alternate between 0 and 1 for retransmissions)
-        sequence_number = self.sequence_tracker.get(chat_partner_addr, 0)  # Default is 0
+        chat_partner_ip = list(chat_partner.keys())[0]
+        chat_partner_addr = (chat_partner_ip, self.port_to_daemon)  # Create proper address tuple
+        
+        sequence_number = self.sequence_tracker.get(chat_partner_addr, 0)  # should be 0, Default is 0
 
         # create chat datagram
         response = self.protocol.create_datagram(
@@ -326,88 +352,88 @@ class SimpDaemon:
 
             #response = "ERROR|Invalid response. Please enter a valid username or 'NO'."
 
-    def wait_for_chat_partner(self, addr):
-        """
-        Wait for incoming chat requests (SYN) from other users (daemon).
-        Periodically check with the user if they want to keep waiting.
-        """
-        while True:
-            print(f"Waiting for chat partner...")
-            try:
-                self.daemon_socket.settimeout(300)  # Set a timeout for the incoming chat requests
+    # def wait_for_chat_partner(self, addr):
+    #     """
+    #     Wait for incoming chat requests (SYN) from other users (daemon).
+    #     Periodically check with the user if they want to keep waiting.
+    #     """
+    #     while True:
+    #         print(f"Waiting for chat partner...")
+    #         #try:
+             #   self.daemon_socket.settimeout(300)  # Set a timeout for the incoming chat requests
                 # Wait to receive a datagram from another daemon
-                header_info, data, daemon_addr = self.receive_datagram()
+              #  header_info, data, daemon_addr = self.receive_datagram()
                 #data, daemon_addr = self.daemon_socket.recvfrom(1024)
                 #header_info = check_header(data)
                 #data = self.protocol.parse_datagram(data)
 
-                print(f"datagram received in wait_for_chat_partner: {header_info.operation}")
+                # print(f"datagram received in wait_for_chat_partner: {header_info.operation}")
 
-                if not header_info:  # Handle None case from receive_datagram
-                    continue
+                # if not header_info:  # Handle None case from receive_datagram
+                #     continue
 
-                # Check if the received datagram is a SYN
-                if header_info and header_info.operation == Operation.SYN:
-                    print(f"Received SYN from {daemon_addr}.")
+                # # Check if the received datagram is a SYN
+                # if header_info and header_info.operation == Operation.SYN:
+                #     print(f"Received SYN from {daemon_addr}.")
 
-                    # Respond with a SYN+ACK
-                    syn_ack_datagram = self.protocol.create_datagram(
-                        HeaderType.CONTROL,
-                        Operation.SYN_ACK,
-                        header_info.sequence_number,
-                        self.current_user,
-                        ""
-                    )
-                    self.daemon_socket.sendto(syn_ack_datagram, daemon_addr)
-                    print(f"Sent SYN+ACK to {daemon_addr}.")
+                #     # Respond with a SYN+ACK
+                #     syn_ack_datagram = self.protocol.create_datagram(
+                #         HeaderType.CONTROL,
+                #         Operation.SYN_ACK,
+                #         header_info.sequence_number,
+                #         self.current_user,
+                #         ""
+                #     )
+                #     self.daemon_socket.sendto(syn_ack_datagram, daemon_addr)
+                #     print(f"Sent SYN+ACK to {daemon_addr}.")
 
-                    # Wait for ACK from the sender
-                    try:
-                        self.daemon_socket.settimeout(self.SOCKET_TIMEOUT)  # 5 seconds timeout
-                        ack_header_info, ack_data, ack_addr = self.receive_datagram()
-                        if ack_header_info and ack_header_info.operation == Operation.ACK and ack_addr == daemon_addr:
-                            print(f"ACK received from {daemon_addr}. Handshake complete.")
-                            # Set the chat partner and exit
-                            self.set_chat_partner(daemon_addr[0], ack_data['user'])
-                            return f"CONNECTING|Connected to user: {ack_data['user']}"
+                #     # Wait for ACK from the sender
+                #     try:
+                #         self.daemon_socket.settimeout(self.SOCKET_TIMEOUT)  # 5 seconds timeout
+                #         ack_header_info, ack_data, ack_addr = self.receive_datagram()
+                #         if ack_header_info and ack_header_info.operation == Operation.ACK and ack_addr == daemon_addr:
+                #             print(f"ACK received from {daemon_addr}. Handshake complete.")
+                #             # Set the chat partner and exit
+                #             self.set_chat_partner(daemon_addr[0], ack_data['user'])
+                #             return f"CONNECTING|Connected to user: {ack_data['user']}"
                         
-                    except socket.timeout:
-                        print(f"Timeout waiting for ACK from {daemon_addr}.")
-                        continue 
+                #     except socket.timeout:
+                #         print(f"Timeout waiting for ACK from {daemon_addr}.")
+                #         continue 
                 
-                else:
-                    print(f"Unexpected datagram received from {daemon_addr}: {header_info}")
-                    continue
+                # else:
+                #     print(f"Unexpected datagram received from {daemon_addr}: {header_info}")
+                #     continue
 
-            except socket.timeout:
-                print("No chat requests received.")
-                # Ask the user if they want to keep waiting
-                message = "ERROR|No chat requests received. Do you want to keep waiting? (YES/NO)"
-                self._send_message_client(message, addr)
+            # except socket.timeout:
+            #     print("No chat requests received.")
+            #     # Ask the user if they want to keep waiting
+            #     message = "ERROR|No chat requests received. Do you want to keep waiting? (YES/NO)"
+            #     self._send_message_client(message, addr)
 
                 # Receive the response from the client
-                try:
-                    self.client_socket.settimeout(30)
-                    data, client_addr = self.client_socket.recvfrom(1024)
-                    response = data.decode('ascii').split('|')
+                # try:
+                #     self.client_socket.settimeout(30)
+                #     data, client_addr = self.client_socket.recvfrom(1024)
+                #     response = data.decode('ascii').split('|')
 
-                    if response[0] == "CONNECTING":
-                        # Continue waiting
-                        continue
-                    elif response[0] == "QUIT":
-                        return
+                #     if response[0] == "CONNECTING":
+                #         # Continue waiting
+                #         continue
+                #     elif response[0] == "QUIT":
+                #         return
                     
-                except socket.timeout:
-                    print("No response from client, stopping wait.")
-                    return
+                # except socket.timeout:
+                #     print("No response from client, stopping wait.")
+                #     return
 
-            except Exception as e:
-                print(f"Error in wait_for_chat_partner: {e}")
-                return
+            # except Exception as e:
+            #     print(f"Error in wait_for_chat_partner: {e}")
+            #     return
 
-            finally:
-                self.daemon_socket.settimeout(None)
-                self.client_socket.settimeout(None)
+            # finally:
+            #     self.daemon_socket.settimeout(None)
+            #     self.client_socket.settimeout(None)
 
 
 
@@ -499,6 +525,7 @@ class SimpDaemon:
         """
         # skip if the header_info is None
         if not header_info or not data or not addr:
+            print(f"Invalid datagram received: {header_info}, {data}, {addr}")
             return
         
         ip = addr[0] if isinstance(addr, tuple) else addr
@@ -510,13 +537,14 @@ class SimpDaemon:
         
         # Don't process ACKs here as they're handled in receive_datagram
         if header_info.operation == Operation.ACK:
-            print(f"ACK received from {addr}")
+            print(f"ACK received from {addr} in handle_message_daemons")
             # update the sequence number
             self.sequence_tracker[ip] = 1 - header_info.sequence_number # 0
 
             # start the chat
-            if self.chat_partner and not self.in_chat:
-                self.start_chat(ip, data['user'])
+            if not self.chat_partner: 
+                self.chat_partner[ip] = data['user']
+                print(f"Chat started with {data['user']}")
 
             return
         
@@ -631,7 +659,8 @@ class SimpDaemon:
         self.sequence_tracker[ip] = 1 - sequence_number # 1 - 0 = 1
 
         # rest of the code is in receive_datagram
-        return True
+        #return True
+        return
 
         
                 
@@ -687,17 +716,16 @@ class SimpDaemon:
         #     return False, "Connection failed."
 
     
-    def start_chat(self, ip, user):
-        """
-        Start a chat with the given user.
-        """
-        self.in_chat = True
-        print(f"Chat started with {user} from {ip}")
+    # def start_chat(self, addr, user):
+    #     """
+    #     Start a chat with the given user.
+    #     """
+    #     self.in_chat = True
+    #     print(f"Chat started with {user}")
 
-        # send the chat request to the client
-        addr = (ip, self.port_to_client)
-        self._send_message_client(f"CONNECTING|Connected to user: {user}", addr)
-        print(f"Chat request sent to {ip} from start_chat")
+    #     # send the chat request to the client
+    #     self._send_message_client(f"CONNECTING|Connected to user: {user}", addr)
+    #     print(f"Chat request sent from start_chat")
 
 
 

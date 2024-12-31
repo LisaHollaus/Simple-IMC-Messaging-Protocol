@@ -145,23 +145,36 @@ class Client:
         print(f"Chat request sent!\n"
               f"Waiting for response from {target_ip}...")
 
+        
         response = self._receive_chat()
         if response[0] == "ERROR":
             print(f"Error: {response[1]}")
             return
+        
         self.chat_partner = response[1].split(": ")[1]
         print(response[1])
 
         print("Start chatting! Type 'q' to end the chat.")
-        message = input("Enter your message: ")
+        #message = input("Enter your message: ")
+        
         # Chat loop
-        while response[0].upper() != "QUIT" or message.upper() != "Q":
+        while True:
             message = input(f"{self.username}: ")
+            if message.upper() == 'Q':
+                self._send_message("QUIT|")
+                break
+                
+            self._send_message(f"CHAT|{message}")
+            
             response = self._receive_chat()
-            if response[0].upper() == "ERROR":
+            if response[0] == "ERROR":
                 print(f"Error: {response[1]}")
                 break
-            print(f"{self.chat_partner}: {response[1]}")
+            elif response[0] == "QUIT":
+                print("Chat partner has disconnected.")
+                break
+            elif response[0] == "CHAT":
+                print(f"{self.chat_partner}: {response[1]}")
 
         print("Chat ended.")
         self.options()
