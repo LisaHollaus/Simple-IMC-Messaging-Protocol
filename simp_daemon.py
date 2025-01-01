@@ -192,6 +192,14 @@ class SimpDaemon:
             if self.get_chat_partner():
                 # forward the message to the chat partner and vise versa
                 self.forward_chat_messages(payload, addr)
+
+                # wait for the response from the chat partner (stop and wait)
+                #header_info, data, addr = self.receive_datagram()
+                #if header_info.type == HeaderType.CHAT and header_info.operation == Operation.CONST:
+                    # forward the message to the client
+                 #   response = f"CHAT| {data['payload']}"
+                return
+
             else:
                 return "ERROR|No chat partner available."
 
@@ -202,6 +210,7 @@ class SimpDaemon:
 
         else:
             return "ERROR|Unknown operation."
+        
 
 
     def forward_chat_messages(self, message, client_addr):
@@ -225,59 +234,70 @@ class SimpDaemon:
                 message
             )
 
+
+        print(f"Sending chat message to {chat_partner_addr}: {response}")
+
+        ########## TRYING SOMETHING ELSE ########## = no waiting for ACK
+        self.daemon_socket.sendto(response, chat_partner_addr)
+        print(f"Message sent to chat partner {chat_partner_addr}.")
+
+
+        ########## OLD CODE ##########
+
         # send datagram and wait for ACK from the chat partner
         # try up to 3 times to send the message to avoid infinite loop for unreachable chat partner
-        max_retries = self.MAX_RETRIES
-        retry_count = 0
-        while retry_count < max_retries:
-            try:
-                self.daemon_socket.settimeout(self.SOCKET_TIMEOUT)  # Set a timeout for the response
-                self.daemon_socket.sendto(response, chat_partner_addr)
-                print(f"Message sent to chat partner {chat_partner_addr}.")
+        # max_retries = self.MAX_RETRIES
+        # retry_count = 0
+        # while retry_count < max_retries:
+        #     try:
+        #         self.daemon_socket.settimeout(self.SOCKET_TIMEOUT)  # Set a timeout for the response
+        #         self.daemon_socket.sendto(response, chat_partner_addr)
+        #         print(f"Message sent to chat partner {chat_partner_addr}.")
 
-                # wait for ACK
-                header_info, data, addr = self.receive_datagram()
+        #         # wait for ACK
+        #         header_info, data, addr = self.receive_datagram()
+        #         print(f"Received datagram in forward_chat_messages! {header_info}, {data}, {addr}")
 
-                if (addr == chat_partner_addr and 
-                    header_info.operation == Operation.ACK and 
-                    header_info.sequence_number == sequence_number):
+                # if (addr == chat_partner_addr and 
+                #     header_info.operation == Operation.ACK and 
+                #     header_info.sequence_number == sequence_number):
 
-                    print(f"ACK received, next sequence number is {1 - sequence_number}.")
-                    self.sequence_tracker[chat_partner_addr] = 1 - sequence_number  # Toggle between 0 and 1
-                    break
-                else:
-                    print(f"Unexpected response received: {header_info}, {data}")
-                    retry_count += 1
-                    continue
+                #     print(f"ACK received, next sequence number is {1 - sequence_number}.")
+                #     self.sequence_tracker[chat_partner_addr] = 1 - sequence_number  # Toggle between 0 and 1
+                #     break
+                # else:
+                #     print(f"Unexpected response received: {header_info}, {data}")
+                #     retry_count += 1
+                #     continue
 
-            except socket.timeout:
-                print(f"Timeout: No ACK received from {chat_partner_addr}. Retrying... {retry_count + 1} of {max_retries}")
-                retry_count += 1
-                # Retransmit the same datagram
+        #     except socket.timeout:
+        #         print(f"Timeout: No ACK received from {chat_partner_addr}. Retrying... {retry_count + 1} of {max_retries}")
+        #         retry_count += 1
+        #         # Retransmit the same datagram
             
-            finally:
-                self.daemon_socket.settimeout(None)
+        #     finally:
+        #         self.daemon_socket.settimeout(None)
 
-        if retry_count == max_retries:
-            response = "ERROR|Failed to deliver message after maximum retries"
-            self._send_message_client(response, client_addr)
-            return
+        # if retry_count == max_retries:
+        #     response = "ERROR|Failed to deliver message after maximum retries"
+        #     self._send_message_client(response, client_addr)
+        #     return
 
-        # wait for the response from the chat partner (stop and wait)
-        header_info, data, addr = self.receive_datagram()
-        if header_info.type == HeaderType.CHAT and header_info.operation == Operation.CONST:
-            # forward the message to the client
-            response = f"CHAT| {data['payload']}"
+        # # wait for the response from the chat partner (stop and wait)
+        # header_info, data, addr = self.receive_datagram()
+        # if header_info.type == HeaderType.CHAT and header_info.operation == Operation.CONST:
+        #     # forward the message to the client
+        #     response = f"CHAT| {data['payload']}"
 
-        elif header_info.operation == Operation.FIN:
-            # close the connection
-            self.closing_connection(addr)
-            response = f"QUIT|Chat partner has disconnected."
+        # elif header_info.operation == Operation.FIN:
+        #     # close the connection
+        #     self.closing_connection(addr)
+        #     response = f"QUIT|Chat partner has disconnected."
 
-        else:
-            # forward the error message to the client
-            response = f"ERROR| {data['payload']}"
-        self.client_socket.sendto(response, client_addr)
+        # else:
+        #     # forward the error message to the client
+        #     response = f"ERROR| {data['payload']}"
+        # self.client_socket.sendto(response, client_addr)
 
     def _send_message_client(self, message, addr):
         """
@@ -300,6 +320,7 @@ class SimpDaemon:
                             print("ACK received.")
                             self.client_socket.settimeout(None)  # Reset timeout
                             return
+                        
                     except socket.timeout:
                         retries += 1
                         print(f"Timeout waiting for ACK from {addr}. Retry {retries}/{max_retries}")
@@ -530,15 +551,33 @@ class SimpDaemon:
         
         ip = addr[0] if isinstance(addr, tuple) else addr
 
-        # Initialize sequence number for new connections
-       # if ip not in self.sequence_tracker:
-        #    self.sequence_tracker[ip] = 0
+        # Handle chat messages
+        if header_info.type == HeaderType.CHAT:
+            print(f"Received chat message from {addr}: {data['payload']}")
+             
+            # First send ACK back to the sending daemon
+            ack = self.protocol.create_datagram(
+                    HeaderType.CONTROL,
+                    Operation.ACK,
+                    header_info.sequence_number,
+                    self.current_user,
+                    ""
+                )
+            
+            self.daemon_socket.sendto(ack, addr)
+            print(f"ACK sent for message {header_info.sequence_number}")
 
-        
+            # forward the chat message to the client
+            client_addr = (self.daemon_ip, self.port_to_client)
+            response = f"CHAT|{data['payload']}"
+            self._send_message_client(response, client_addr)
+            return
+
         # Don't process ACKs here as they're handled in receive_datagram
         if header_info.operation == Operation.ACK:
             print(f"ACK received from {addr} in handle_message_daemons")
-            # update the sequence number
+
+            # update the sequence number for tracking lost messages
             self.sequence_tracker[ip] = 1 - header_info.sequence_number # 0
 
             # start the chat
@@ -568,8 +607,6 @@ class SimpDaemon:
                 self.daemon_socket.sendto(syn_ack, addr)
                 print(f"SYN+ACK sent to from handle_message_daemons: {addr}")
 
-                # update the sequence number
-                #self.sequence_tracker[ip] = 1 - header_info.sequence_number # 1 - 0 = 1
             return
         
         if header_info.operation == Operation.SYN_ACK:
@@ -602,8 +639,7 @@ class SimpDaemon:
         if header_info.operation == Operation.ERR:
             print(f"Received error: {data['payload']}")
             return
-
-        
+         
 
 
         else:

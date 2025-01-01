@@ -151,11 +151,15 @@ class Client:
             print(f"Error: {response[1]}")
             return
         
+        self.main_chat_loop(response)
+
+
+    def main_chat_loop(self, response):
+        # set the chat partner
         self.chat_partner = response[1].split(": ")[1]
         print(response[1])
 
         print("Start chatting! Type 'q' to end the chat.")
-        #message = input("Enter your message: ")
         
         # Chat loop
         while True:
@@ -175,6 +179,7 @@ class Client:
                 break
             elif response[0] == "CHAT":
                 print(f"{self.chat_partner}: {response[1]}")
+                continue
 
         print("Chat ended.")
         self.options()
@@ -191,10 +196,38 @@ class Client:
 
             response = self._receive_chat()
             if response[0] == "CONNECTING":
-                print(f"Incoming chat request from {response[1]}")
-                self.chat_partner = response[1]
-                self.start_chat()
-                break
+                print(f"Incoming chat request..")
+
+                user_request = response[1].split(": ")[1]
+
+                # ask the user if he wants to accept the chat request
+                print(f"Do you want to accept the chat request from {user_request}? (y/n)")
+                choice = input("Choose an option: ")
+
+                if choice.upper() == 'Y' or choice.upper() == 'YES':
+                    print(f"Chat request accepted from {user_request}.")
+
+                    # no need to send a message to the daemon, as the daemon will assume that the chat request is accepted after the three way handshake
+                    # wait for the first message from the chat partner
+                    response = self._receive_chat()
+                    if response[0] == "CHAT":
+                        print(f"Chat partner connected! Start chatting!")
+                        print(f"{user_request}: {response[1]}")
+
+                        # continue the chat in the main chat loop (async to the other chat partner = stop-and-wait)
+                        self.main_chat_loop(response)
+                    elif response[0] == "QUIT":
+                        print("Chat partner disconnected.")
+                        return
+                    else:
+                        print("Error: Chat partner did not send a message.")
+                        return
+                    
+                else:
+                    self._send_message("QUIT|") # send a QUIT message to the daemon, so the daemon will know that the chat request is denied
+                    print("Chat request denied.")
+                    return
+
             elif response[0] == "ERROR":
                 print(f"Error: {response[1]}")
                 return
