@@ -4,7 +4,7 @@
 ## How to run the application
 ### Preparations:
 - activate the virtual environment
-- install requirements.py
+- install requirements.txt
 
 ### Start the daemon:
 In order to start the daemon, run the following command in the terminal:
