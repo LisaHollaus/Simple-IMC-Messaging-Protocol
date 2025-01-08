@@ -3,11 +3,11 @@ import sys
 from simp_check_functions import *
 
 
-class Client:
+class SimpClient:
     SOCKET_TIMEOUT = 5
     MAX_RETRIES = 3
 
-    def __init__(self, daemon_ip):
+    def __init__(self, daemon_ip: str) -> None:
         """
         Initialize the client to communicate with a specific daemon.
         """
@@ -17,7 +17,7 @@ class Client:
         self.username = None  # Set during user login or setup
         self.chat_partner = None  # Set during chat setup
 
-    def connect_to_daemon(self):
+    def connect_to_daemon(self) -> None:
         """
         Build the connection to the daemon before asking for the username.
             1. Send a connection request to the daemon (PING)
@@ -28,10 +28,10 @@ class Client:
         try:
             print(f"Connecting to daemon at {self.daemon_ip}...")
             message = "PING|"  # to check if the daemon is running/available
-            self._send_message(message)
+            self.send_message(message)
 
             # 2. Receive a response from the daemon (PONG)
-            response = self._receive_chat()
+            response = self.receive_message()
 
             if response[0] == "PONG":
                 print(f"Connected to daemon {self.daemon_ip}!")
@@ -42,9 +42,9 @@ class Client:
             # 3. If the response is positive, proceed with the client setup
             self.username = input("Enter your username: ")
             message = f"CONNECT|{self.username}"
-            self._send_message(message)
+            self.send_message(message)
 
-            response = self._receive_chat()  # Wait for the welcome message
+            response = self.receive_message()  # Wait for the welcome message
 
             print("received", response)
             print(response[1])  # Print welcome message and pending chat requests
@@ -52,7 +52,7 @@ class Client:
                 return response
             else:
                 while response[0] != "CONNECTING":
-                    response = self._receive_chat()
+                    response = self.receive_message()
                     print(response[1])  # Print welcome message and pending chat requests
             return response
 
@@ -60,7 +60,7 @@ class Client:
             print(f"Error in connect_to_daemon: {e}")
             exit(1)
 
-    def _send_message(self, message):
+    def send_message(self, message: str) -> None:
         """
         Send a message and wait for an ACK from the daemon.
         If no ACK is received within the timeout, retry sending the message.
@@ -75,7 +75,7 @@ class Client:
 
                 # Wait for ACK
                 self.socket.settimeout(5)  # Set timeout for receiving
-                response_ack = self._receive_chat()
+                response_ack = self.receive_message()
 
                 # Check if the response is an ACK
                 if response_ack[0] == "ACK":
@@ -97,7 +97,7 @@ class Client:
 
         raise Exception("Max retries exceeded. Message not acknowledged. Daemon not reachable. Exiting.")
 
-    def start(self):
+    def start(self) -> None:
         """
         Entry point for the client to interact with the user.
         """
@@ -106,12 +106,9 @@ class Client:
         if response[1] == f"Welcome, {self.username}! \nYou currently have no pending chat requests." or response == "CONNECTING|":  # not accepted requests
             self.options()
         else:
-            self.start_chat()
+            self.chat()
 
-
-
-
-    def options(self):
+    def options(self) -> None:
         """
         Provide the user with options to start a chat, wait for a chat, or quit.
         """
@@ -119,7 +116,7 @@ class Client:
             print("\nWhat now? \n(1) Start Chat \n(2) Wait for Chat \n(q) Quit")
             choice = input("Choose an option: ")
             if choice == '1':
-                self.start_chat()
+                self.chat()
             elif choice == '2':
                 self.wait_for_chat()
             elif choice == 'q':
@@ -127,7 +124,7 @@ class Client:
             else:
                 print("Invalid choice. Try again.")
 
-    def start_chat(self):
+    def chat(self) -> None:
         """
         Initiate a chat request with another user.
         """
@@ -140,21 +137,20 @@ class Client:
                 print("Invalid IP address. Try again.")
 
         print(f"Chat request sent to {target_ip}.")
-        self._send_message(f"CONNECTING|request: {target_ip}")  # Send a chat request to the daemon
+        self.send_message(f"CONNECTING|request: {target_ip}")  # Send a chat request to the daemon
 
         print(f"Chat request sent!\n"
               f"Waiting for response from {target_ip}...")
 
         
-        response = self._receive_chat()
+        response = self.receive_message()
         if response[0] == "ERROR":
             print(f"Error: {response[1]}")
             return
         
         self.main_chat_loop(response)
 
-
-    def main_chat_loop(self, response):
+    def main_chat_loop(self, response) -> None:
         # set the chat partner
         self.chat_partner = response[1].split(": ")[1]
         print(response[1])
@@ -165,12 +161,12 @@ class Client:
         while True:
             message = input(f"{self.username}: ")
             if message.upper() == 'Q':
-                self._send_message("QUIT|")
+                self.send_message("QUIT|")
                 break
                 
-            self._send_message(f"CHAT|{message}")
+            self.send_message(f"CHAT|{message}")
             
-            response = self._receive_chat()
+            response = self.receive_message()
             if response[0] == "ERROR":
                 print(f"Error: {response[1]}")
                 break
@@ -184,17 +180,17 @@ class Client:
         print("Chat ended.")
         self.options()
 
-    def wait_for_chat(self):
+    def wait_for_chat(self) -> None:
         """
         Wait for incoming chat requests from other users.
         """
         print("Waiting for incoming chat requests...")
         # let the daemon handle the chat request
-        self._send_message("CONNECTING|")
+        self.send_message("CONNECTING|")
 
         while True:
 
-            response = self._receive_chat()
+            response = self.receive_message()
             if response[0] == "CONNECTING":
                 print(f"Incoming chat request..")
 
@@ -209,7 +205,7 @@ class Client:
 
                     # no need to send a message to the daemon, as the daemon will assume that the chat request is accepted after the three way handshake
                     # wait for the first message from the chat partner
-                    response = self._receive_chat()
+                    response = self.receive_message()
                     if response[0] == "CHAT":
                         print(f"Chat partner connected! Start chatting!")
                         print(f"{user_request}: {response[1]}")
@@ -224,7 +220,7 @@ class Client:
                         return
                     
                 else:
-                    self._send_message("QUIT|") # send a QUIT message to the daemon, so the daemon will know that the chat request is denied
+                    self.send_message("QUIT|") # send a QUIT message to the daemon, so the daemon will know that the chat request is denied
                     print("Chat request denied.")
                     return
 
@@ -235,14 +231,13 @@ class Client:
                 print(response[1])
                 print("Still waiting for incoming chat requests...")
 
-    def _receive_chat(self):
+    def receive_message(self) -> str:
         """
         Receive chat messages from the daemon and format it to a list.
         Automatically send an ACK for every valid message received.
         Handle invalid or unexpected message formats and return an error message.
         """
-            # timeout needed?
-            # should the user be asked again if he doesn't respond within the timeout?
+
         try:
 
             data, addr = self.socket.recvfrom(1024)
@@ -258,9 +253,6 @@ class Client:
             if response[0] != "ACK":
                 print("sending ACK")
                 self._send_ack(addr)
-            #elif response[0] == "ACK":
-             #   print("ACK received.")
-              #  self._receive_chat()  # Wait for the next message (skip ACK)
 
             return response  # [operation, payload]
 
@@ -269,7 +261,7 @@ class Client:
             return ["ERROR", str(e)]
 
 
-    def _send_ack(self, addr):
+    def _send_ack(self, addr) -> None:
         """
         Send an automatic ACK to the daemon after receiving a message.
         """
@@ -280,14 +272,14 @@ class Client:
         except Exception as e:
             print(f"Error while sending ACK: {e}")
 
-    def quit(self):
+    def quit(self) -> None:
         """
         Disconnect from the daemon and exit.
         """
         print("Disconnecting from the daemon...")
         try:
-            self._send_message("QUIT|")
-            response = self._receive_chat()
+            self.send_message("QUIT|")
+            response = self.receive_message()
             if response[0] == "DISCONNECTED":
                 print(response[1])  # Print the disconnect message
         except Exception as e:
@@ -316,7 +308,7 @@ if __name__ == "__main__":
         print(check)
         exit(1)
 
-    client = Client(daemon_ip)
+    client = SimpClient(daemon_ip)
     client.start()
 
 
