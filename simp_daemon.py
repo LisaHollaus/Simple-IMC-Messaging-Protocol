@@ -535,6 +535,7 @@ class SimpDaemon:
         """
         Handles communication with other daemons on port 7777.
         """
+        global addr
         print(f"Listening for daemon communication on {self.port_to_daemon}...")
 
         # build and run daemon connection
@@ -551,16 +552,16 @@ class SimpDaemon:
 
             except Exception as e:
                 print(f"Error handling message: {e}")
-                error_response = self.protocol.create_datagram(
-                            HeaderType.CONTROL,
-                            Operation.ERR,
-                            self.sequence_tracker[addr[0]],  # Use the current sequence number
-                            self.current_user,
-                            e  # Error message
-                        )
-
-                # let the other daemon know about the error
                 if addr:
+                    error_response = self.protocol.create_datagram(
+                                HeaderType.CONTROL,
+                                Operation.ERR,
+                                self.sequence_tracker[addr[0]],  # Use the current sequence number
+                                self.current_user,
+                                e  # Error message
+                            )
+
+                    # let the other daemon know about the error
                     self.daemon_socket.sendto(error_response, addr)
                 continue  # keep the daemon running
 
