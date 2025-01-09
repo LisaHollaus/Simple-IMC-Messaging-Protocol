@@ -1,10 +1,12 @@
 import socket
 import sys
+from typing import List
+
 from simp_check_functions import *
 
 
 class SimpClient:
-    SOCKET_TIMEOUT = 5
+    SOCKET_TIMEOUT = 5  # seconds
     MAX_RETRIES = 3
 
     def __init__(self, daemon_ip: str) -> None:
@@ -17,7 +19,7 @@ class SimpClient:
         self.username = None  # Set during user login or setup
         self.chat_partner = None  # Set during chat setup
 
-    def connect_to_daemon(self) -> None:
+    def connect_to_daemon(self) -> list[str]:
         """
         Build the connection to the daemon before asking for the username.
             1. Send a connection request to the daemon (PING)
@@ -32,7 +34,6 @@ class SimpClient:
 
             # 2. Receive a response from the daemon (PONG)
             response = self.receive_message()
-
             if response[0] == "PONG":
                 print(f"Connected to daemon {self.daemon_ip}!")
             else:
@@ -46,7 +47,6 @@ class SimpClient:
 
             response = self.receive_message()  # Wait for the welcome message
 
-            print("received", response)
             print(response[1])  # Print welcome message and pending chat requests
             if response[1] == f"Welcome, {self.username}! \nYou currently have no pending chat requests.":
                 return response
@@ -63,7 +63,7 @@ class SimpClient:
     def send_message(self, message: str) -> None:
         """
         Send a message and wait for an ACK from the daemon.
-        If no ACK is received within the timeout, retry sending the message.
+        If no ACK is received within the timeout, retry sending the message (max 3 times).
         """
         max_retries = 3
         retries = 0
@@ -71,15 +71,15 @@ class SimpClient:
             try:
 
                 self.socket.sendto(message.encode('ascii'), (self.daemon_ip, self.daemon_port))
-                print(f"Message sent: {message}")
+                print(f"Message sent: {message}")  # left in for debugging
 
                 # Wait for ACK
-                self.socket.settimeout(5)  # Set timeout for receiving
+                self.socket.settimeout(self.SOCKET_TIMEOUT)
                 response_ack = self.receive_message()
 
                 # Check if the response is an ACK
                 if response_ack[0] == "ACK":
-                    print("ACK received.")
+                    print("ACK received.")  # left in for debugging
                     return  # Message sent successfully and ACK received
                 else:
                     print(f"Unexpected response: {response_ack[1]}")
@@ -131,30 +131,27 @@ class SimpClient:
         while True:
             target_ip = input("Enter the target user's daemon IP address: ").strip()
             check = is_valid_ip(target_ip)
-            if check is True: # check if the IP address is valid
+            if check is True:  # check if the IP address is valid
                 break
             else:
                 print("Invalid IP address. Try again.")
 
-        print(f"Chat request sent to {target_ip}.")
         self.send_message(f"CONNECTING|request: {target_ip}")  # Send a chat request to the daemon
 
         print(f"Chat request sent!\n"
               f"Waiting for response from {target_ip}...")
 
-        
         response = self.receive_message()
         if response[0] == "ERROR":
             print(f"Error: {response[1]}")
             return
-        
         self.main_chat_loop(response)
 
     def main_chat_loop(self, response) -> None:
         # set the chat partner
         self.chat_partner = response[1].split(": ")[1]
-        print(response[1])
 
+        print(response[1])  # Connected to user: {self.chat_partner}
         print("Start chatting! Type 'q' to end the chat.")
         
         # Chat loop
@@ -189,11 +186,9 @@ class SimpClient:
         self.send_message("CONNECTING|")
 
         while True:
-
             response = self.receive_message()
             if response[0] == "CONNECTING":
                 print(f"Incoming chat request..")
-
                 user_request = response[1].split(": ")[1]
 
                 # ask the user if he wants to accept the chat request
@@ -203,9 +198,11 @@ class SimpClient:
                 if choice.upper() == 'Y' or choice.upper() == 'YES':
                     print(f"Chat request accepted from {user_request}.")
 
-                    # no need to send a message to the daemon, as the daemon will assume that the chat request is accepted after the three way handshake
+                    # no need to send a message to the daemon
+                    # the daemon will assume that the chat request is accepted after the three-way-handshake
                     # wait for the first message from the chat partner
                     response = self.receive_message()
+                    print(f"response in wait_for_chat: {response} ")
                     if response[0] == "CHAT":
                         print(f"Chat partner connected! Start chatting!")
                         print(f"{user_request}: {response[1]}")
@@ -216,9 +213,8 @@ class SimpClient:
                         print("Chat partner disconnected.")
                         return
                     else:
-                        print("Error: Chat partner did not send a message.")
+                        print("Error: Unexpected response. Chat ended.")
                         return
-                    
                 else:
                     self.send_message("QUIT|") # send a QUIT message to the daemon, so the daemon will know that the chat request is denied
                     print("Chat request denied.")
@@ -231,35 +227,28 @@ class SimpClient:
                 print(response[1])
                 print("Still waiting for incoming chat requests...")
 
-    def receive_message(self) -> str:
+    def receive_message(self) -> list[str]:
         """
         Receive chat messages from the daemon and format it to a list.
         Automatically send an ACK for every valid message received.
         Handle invalid or unexpected message formats and return an error message.
         """
-
         try:
-
             data, addr = self.socket.recvfrom(1024)
 
             if not data:  # Check if data is empty
                 return ["ERROR", "Received empty message"]
 
             response = data.decode('ascii').split('|')
-            if len(response) < 1:  # check if the message is too short (at least operation needed!)
-                return ["Error", "Invalid message format!"]
 
             # If the message is not an ACK, send an ACK response
             if response[0] != "ACK":
-                print("sending ACK")
                 self._send_ack(addr)
 
             return response  # [operation, payload]
 
         except Exception as e:  # catch all exceptions
-            print(f"Error: {e}")
             return ["ERROR", str(e)]
-
 
     def _send_ack(self, addr) -> None:
         """
@@ -268,7 +257,6 @@ class SimpClient:
         try:
             ack_message = "ACK|"
             self.socket.sendto(ack_message.encode('ascii'), addr)
-            print("ACK sent.")
         except Exception as e:
             print(f"Error while sending ACK: {e}")
 
@@ -280,7 +268,7 @@ class SimpClient:
         try:
             self.send_message("QUIT|")
             response = self.receive_message()
-            if response[0] == "DISCONNECTED":
+            if response[0] == "QUIT":
                 print(response[1])  # Print the disconnect message
         except Exception as e:
             print(f"Error while disconnecting: {e}")

@@ -1,8 +1,11 @@
 # Final Assignment 
 #### Authors: Hollaus, Meseli
 
-## How to run the application
-### Preparations:
+Detailed description of the project can be found in the [Documentation.docx](Documentation.docx) file.
+
+But here is a short overview on how to run the project:
+
+### Preparations
 - activate the virtual environment
 - install requirements.txt
 
@@ -30,28 +33,9 @@ python simp_client.py 127.0.0.1
 3. If there are other users you can connect to them, otherwise you have to wait for another user to connect to you
 4. The other user can accept or decline the connection request 
 5. If the connection request is accepted you can start chatting with the other user 
-6. quit the chat by typing q in the message field
+6. quit the chat by typing "q" in the message field
 
 
-### Protocol between client and daemon:
-We implemented a simple protocol between the client and the daemon, based on a simple text-based format.
-
-The protocol defines following operations:
-
-- Ping: Check if the daemon is alive. 
-- Connect: Establish a connection between the client and the daemon.
-- Connecting: The daemon is connecting to another daemon (chat partner).
-- Chat: Send chat messages from the client to the daemon. 
-- Quit: Disconnect the client from the daemon. 
-- ERROR: Send an error message from the daemon to the client.
-
-Each message will have a simple format: OPERATION|PAYLOAD
-
-- Operation: A short string to define the type of request (CONNECT, CHAT, QUIT).
-- Payload: Optional additional data (e.g., username, chat message).
-
-### Additional Notes on our implementation approach:
-- We added a checksum to the protocol to ensure the integrity of the messages between daemon and daemon.
-- We assumed the client knows the IP address of the users daemon he wants to connect to, so we did not implement a discovery mechanism (example: Database).
-- We added a timeout of 30 seconds for the chat partner to respond until the client gets asked again if he wants to keep on waiting or quit, to give the client the option to quit 
-- Whenever a ACK is not received a sequence number error should accure, as the tracking of the sequence number is only updated by receiving a ACK (a way to improve this would be to automatically resend original message whenever a sequence error occures)
+### Additional note from the authors:
+The project is not fully functional yet. The connection between the clients is established, but the chat messages in the end seem to be echoing and therefore resulting in an invalid sequence number. 
+Sadly, we were not able to fix this issue in time, but we are still working on it for our own learning purposes and hope to fix it soon.

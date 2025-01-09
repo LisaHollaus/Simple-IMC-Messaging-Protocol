@@ -102,52 +102,62 @@ class SimpProtocol:
     def create_datagram(self, datagram_type, operation, sequence, user, payload):
         """
         Construct a SIMP datagram.
+        Returns as byte array.
         """
+        try:
+            if isinstance(payload, ErrorCode):
+                payload = payload.message().encode('ascii')  # if payload is instance of ErrorCode, convert error code to ascii message
 
-        if isinstance(payload, ErrorCode):
-            payload = payload.message().encode('ascii')  # if payload is instance of ErrorCode, convert error code to ascii message
+            datagram_type = datagram_type.to_bytes()
+            operation = operation.to_bytes()
+            sequence = sequence.to_bytes(1, byteorder='big')
+            user = user.encode('ascii').ljust(32, b'\x00')  # Pad username to 32 bytes
+            payload = payload.encode('ascii') if isinstance(payload, str) else payload # Convert payload to bytes if not already
 
-        datagram_type = datagram_type.to_bytes()
-        operation = operation.to_bytes()
-        sequence = sequence.to_bytes(1, byteorder='big') 
-        user = user.encode('ascii').ljust(32, b'\x00')  # Pad username to 32 bytes
-        payload = payload.encode('ascii') if isinstance(payload, str) else payload # Convert payload to bytes if not already
+            length = len(payload)
+            length = length.to_bytes(4, byteorder='big') # 4 bytes
 
-        length = len(payload)
-        length = length.to_bytes(4, byteorder='big') # 4 bytes
-        
-        header = b''.join([datagram_type, operation, sequence, user, length])
+            header = b''.join([datagram_type, operation, sequence, user, length])
 
-        # adding checksum to header
-        checksum = calculate_checksum16(header + payload)
-        datagram = b''.join([header, payload, checksum])
+            # adding checksum to header
+            checksum = calculate_checksum16(header + payload)
+            datagram = b''.join([header, payload, checksum])
 
-        return datagram
+            return datagram
+
+        except Exception as e:
+            print(f"Error creating datagram: {e}")
+            return None
 
     def parse_datagram(self, data):
         """
         Parse a SIMP datagram.
+        Returns a dictionary with the following keys:
+            type, operation, sequence, user, length, payload
         """
+        try:
+            header = data[:MAX_HEADER_SIZE]  # 39 bytes
+            payload = data[MAX_HEADER_SIZE:-2]  # this excludes checksum bytes
 
-        header = data[:MAX_HEADER_SIZE]  # 39 bytes
-        payload = data[MAX_HEADER_SIZE:-2]  # this excludes checksum bytes
+            # parsing header and payload
+            datagram_type = int(header[0])
+            operation = int(header[1])
+            sequence = int(header[2])
+            user = header[3:35].decode('ascii').strip('\x00')  # Remove padding
+            length = int.from_bytes(header[35:], byteorder='big')
+            payload = payload.decode('ascii')
 
-        # parsing header and payload
-        datagram_type = int(header[0])
-        operation = int(header[1])
-        sequence = int(header[2])
-        user = header[3:35].decode('ascii').strip('\x00') # Remove padding
-        length = int.from_bytes(header[35:], byteorder='big')
-        payload = payload.decode('ascii')
-
-        return {
-            "type": datagram_type,
-            "operation": operation,
-            "sequence": sequence,
-            "user": user,
-            "length": length,
-            "payload": payload
-        }
+            return {
+                "type": datagram_type,
+                "operation": operation,
+                "sequence": sequence,
+                "user": user,
+                "length": length,
+                "payload": payload
+            }
+        except Exception as e:
+            print(f"Error parsing datagram: {e}")
+            return None
 
     def get_message_type(self, message):
         """
@@ -199,5 +209,5 @@ class SimpProtocol:
             :param message: The received message
             :return: The payload size
         """
-        payload_size = message[35:39] # extract the payload size from the header (4 bytes)
+        payload_size = message[35:39]  # extract the payload size from the header (4 bytes)
         return int.from_bytes(payload_size, byteorder='big')
