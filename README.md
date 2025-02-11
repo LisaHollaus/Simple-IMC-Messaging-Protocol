@@ -1,6 +1,7 @@
 # Final Assignment 
 #### Authors: Hollaus, Meseli
 
+A UDP based client-daemon communication Protocol.
 Detailed description of the project can be found in the [Documentation.docx](Documentation.docx) file.
 
 But here is a short overview on how to run the project:
