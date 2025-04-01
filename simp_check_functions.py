@@ -1,30 +1,9 @@
 import ipaddress
 from simp_protocol import *
+from checksum import calculate_checksum16
 
 # Create an instance of SimpProtocol
 protocol = SimpProtocol()
-
-def calculate_checksum16(bytes_data: bytes) -> bytes: # using own checksum function form previous assignment
-    """
-    Calculates a checksum from a byte array (16 bits).
-    Hint: instead of iterating byte per byte, each iteration processes two bytes.
-    Bit masks have to be adapted to 16-bit accordingly.
-    """
-    checksum = 0
-
-    if len(bytes_data) % 2 != 0:
-        bytes_data += b'\x00'  # padding with 0 if length is odd
-
-    for i in range(0, len(bytes_data), 2):  # each iteration processes 2 bytes as hinted above
-        if i + 1 < len(bytes_data):  # if 2 bytes available, we should combine them into a 16bit
-            combined_bytes = (bytes_data[i+1] << 8) + bytes_data[i]  # combining 2 bytes into one 16bit: first byte is shifted 8bits to left, second byte is added to it
-        checksum += combined_bytes  # adding 16bit to checksum
-        checksum = (checksum & 0xFFFF) + (checksum >> 16)  # if any carry is here, we add it to the checksum
-
-    checksum = (checksum & 0xFFFF) + (checksum >> 16)  # any remaining carry after processing all 16bit should be added to checksum
-    checksum = checksum ^ 0xFFFF  # negating the result
-
-    return checksum
 
 
 def is_valid_ip(ip: str) -> bool | str:
@@ -39,67 +18,57 @@ def is_valid_ip(ip: str) -> bool | str:
     except ValueError as e:
         return f"Error: {ip} is not a valid IP address."
 
+
 def check_header(message: bytes) -> HeaderInfo:
     """
     Checks if header is correctly built
     :param message: The message to check
     :return: HeaderInfo object with the result of the check
     """
+
     header_info = HeaderInfo()
-    if len(message) <= MAX_HEADER_SIZE: # check if the msg is too short
-        header_info.code = ErrorCode.MESSAGE_TOO_SHORT
-        return header_info
-
     header_info.type = protocol.get_message_type(message)  # validate and get the message type
-    if header_info.type is HeaderType.UNKNOWN:
-        header_info.code = ErrorCode.UNKNOWN_MESSAGE
-        return header_info
-
     operation = protocol.get_operation(message, header_info.type)  # validate the operation field
-    if operation is None:
-        header_info.code = ErrorCode.INVALID_OPERATION
-        return header_info
-
     sequence_number = protocol.get_sequence_number(message)
-    if sequence_number not in [0, 1]:
-        header_info.code = ErrorCode.INVALID_OPERATION
-    return header_info
-
-
-    # it's not done yet, logical errors but to do later
     user = message[3:35].decode('ascii').strip('\x00')  # validate the user field
-    if not user:
-        header_info.code = ErrorCode.INVALID_USER
-        return header_info
-
     payload_size = protocol.get_payload_size(message)  # validate and get the payload size
-    if header_info.type is HeaderType.CONTROL:
-        if payload_size != INT_PAYLOAD_SIZE:
-            header_info.code = ErrorCode.TYPE_MISMATCH
-            return header_info
-    elif header_info.type is HeaderType.CHAT:
-        if payload_size == 0:  # check if the payload is too short
-            header_info.code = ErrorCode.MESSAGE_TOO_SHORT
-            return header_info
-        elif payload_size > MAX_STRING_PAYLOAD_SIZE:  # check if the payload is too long
-            header_info.code = ErrorCode.MESSAGE_TOO_LONG
-            return header_info
 
-    payload = message[MAX_HEADER_SIZE:]  # get the payload
-    if len(payload) != payload_size:
-        header_info.code = ErrorCode.WRONG_PAYLOAD  # check if the payload is correct
-        return header_info
 
-    received_checksum = int.from_bytes(message[-2:], byteorder='big') # get the received checksum
-    calculated_checksum = calculate_checksum16(payload)
+    if len(message) < MAX_HEADER_SIZE: # check if the msg is too short (less than 39 bytes)
+        header_info.code = ErrorCode.MESSAGE_TOO_SHORT
+
+    elif header_info.type is HeaderType.UNKNOWN:
+        header_info.code = ErrorCode.UNKNOWN_MESSAGE
+    
+    elif operation is None:
+        header_info.code = ErrorCode.INVALID_OPERATION
+    
+    elif sequence_number not in [0, 1]:
+        header_info.code = ErrorCode.INVALID_OPERATION
+
+    elif not user:
+        header_info.code = ErrorCode.INVALID_USER
+
+    elif payload_size > MAX_STRING_PAYLOAD_SIZE:
+        header_info.code = ErrorCode.MESSAGE_TOO_LONG
+
+    elif payload_size == 0 and header_info.type != HeaderType.CONTROL:
+        header_info.code = ErrorCode.MESSAGE_TOO_SHORT
+
+    header = message[:MAX_HEADER_SIZE]
+    payload = message[MAX_HEADER_SIZE:-2]
+    received_checksum = message[-2:]
+
+    calculated_checksum = calculate_checksum16(header + payload)
+
     if received_checksum != calculated_checksum:  # check if the checksum is correct
         header_info.code = ErrorCode.WRONG_PAYLOAD
-        return header_info
+
+    # Final check: If no errors were set, mark as OK
+    if header_info.code == ErrorCode.OK:  # ErrorCode.OK is default
+        header_info.is_ok = True
+
     header_info.operation = operation
-    header_info.code = ErrorCode.OK  # if all checks are passed, return OK
-    header_info.is_ok = True
-    header.info.sequence_number = sequence_number
+    header_info.sequence_number = sequence_number
     return header_info
 
-    # fill out with error checks
-        # create ErrorCodes class for reply in simp_protocol.py

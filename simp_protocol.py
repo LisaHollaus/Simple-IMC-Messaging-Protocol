@@ -1,14 +1,12 @@
 from enum import Enum
+from checksum import calculate_checksum16
 
-# change values to match the assignment
 MAX_HEADER_SIZE = 39
 MESSAGE_TYPE_SIZE = 1
 PAYLOAD_SIZE = 4
 MAX_STRING_PAYLOAD_SIZE = 256
 INT_PAYLOAD_SIZE = 4
 FLOAT_PAYLOAD_SIZE = 8
-
-
 
 
 class HeaderType(Enum):
@@ -35,6 +33,7 @@ class ErrorCode(Enum):
     INVALID_USER = 6
     INVALID_OPERATION = 7
     BUSY_DAEMON = 8
+    WRONG_SEQUENCE = 9
 
     def message(self):
         if self == ErrorCode.OK:
@@ -55,15 +54,18 @@ class ErrorCode(Enum):
             return "Invalid operation"
         elif self == ErrorCode.BUSY_DAEMON:
             return "User already in another chat"
-
+        elif self == ErrorCode.WRONG_SEQUENCE:
+            return "Wrong sequence number"
 
 
 class Operation(Enum):
-    CONST = 1  # for chat protocol
+    # for chat protocol
+    CONST = 1
     # for control protocol
     ERR = 1
     SYN = 2
     ACK = 4
+    SYN_ACK = 6 # SYN + ACK
     FIN = 8
 
     def to_bytes(self):
@@ -75,11 +77,10 @@ class Operation(Enum):
             return int(2).to_bytes(1, byteorder='big')
         elif self == Operation.ACK:
             return int(4).to_bytes(1, byteorder='big')
+        elif self == Operation.SYN_ACK:
+            return int(6).to_bytes(1, byteorder='big')
         elif self == Operation.FIN:
             return int(8).to_bytes(1, byteorder='big')
-
-
-
 
 
 class HeaderInfo:
@@ -91,64 +92,72 @@ class HeaderInfo:
 
     def __init__(self):
         self.is_ok = False
-        self.type = HeaderType.OK
         self.code = ErrorCode.OK
-
+        self.type = HeaderType.UNKNOWN
 
 
 class SimpProtocol:
     HEADER_FORMAT = '!BBB32sI'  # Type (1 byte), Operation (1 byte), Sequence (1 byte), User (32 bytes), Length (4 bytes)
 
-
     def create_datagram(self, datagram_type, operation, sequence, user, payload):
         """
         Construct a SIMP datagram.
+        Returns as byte array.
         """
+        try:
+            if isinstance(payload, ErrorCode):
+                payload = payload.message().encode('ascii')  # if payload is instance of ErrorCode, convert error code to ascii message
 
-        if payload.isinstance(ErrorCode):
-            payload = payload.message()  # Convert error code to message ('ASCII')
+            datagram_type = datagram_type.to_bytes()
+            operation = operation.to_bytes()
+            sequence = sequence.to_bytes(1, byteorder='big')
+            user = user.encode('ascii').ljust(32, b'\x00')  # Pad username to 32 bytes
+            payload = payload.encode('ascii') if isinstance(payload, str) else payload # Convert payload to bytes if not already
 
-        datagram_type = datagram_type.to_bytes(1, byteorder='big')
-        operation = operation.to_bytes(1, byteorder='big')
-        sequence = sequence.to_bytes(1, byteorder='big')
-        user = user.encode('ascii').ljust(32, b'\x00')  # Pad username to 32 bytes
-        payload = payload.encode('ascii')
-        length = len(payload)
-        length = length.to_bytes(4, byteorder='big')
+            length = len(payload)
+            length = length.to_bytes(4, byteorder='big') # 4 bytes
 
-        header = b''.join([datagram_type, operation, sequence, user, length, payload])
+            header = b''.join([datagram_type, operation, sequence, user, length])
 
-        #if datagram_type == HeaderType.CHAT:
-       #     checksum = calculate_checksum16(payload)
-         #   header = b''.join([header, checksum]) # Add checksum to header
+            # adding checksum to header
+            checksum = calculate_checksum16(header + payload)
+            datagram = b''.join([header, payload, checksum])
 
-        return header  # in bytes
+            return datagram
+
+        except Exception as e:
+            print(f"Error creating datagram: {e}")
+            return None
 
     def parse_datagram(self, data):
         """
         Parse a SIMP datagram.
+        Returns a dictionary with the following keys:
+            type, operation, sequence, user, length, payload
         """
+        try:
+            header = data[:MAX_HEADER_SIZE]  # 39 bytes
+            payload = data[MAX_HEADER_SIZE:-2]  # this excludes checksum bytes
 
-        header = data[:MAX_HEADER_SIZE]  # 39 bytes
-        payload = data[MAX_HEADER_SIZE:]
+            # parsing header and payload
+            datagram_type = int(header[0])
+            operation = int(header[1])
+            sequence = int(header[2])
+            user = header[3:35].decode('ascii').strip('\x00')  # Remove padding
+            length = int.from_bytes(header[35:], byteorder='big')
+            payload = payload.decode('ascii')
 
-        datagram_type = int(header[0])
-        operation = int(header[1])
-        sequence = int(header[2])
-        user = header[3:35].decode('ascii').strip('\x00') # Remove padding
-        length = int.from_bytes(header[35:], byteorder='big')
-        payload = payload.decode('ascii')
-
-        return {
-            "type": datagram_type,
-            "operation": operation,
-            "sequence": sequence,
-            "user": user,
-            "length": length,
-            "payload": payload
-        }
-
-
+            return {
+                "type": datagram_type,
+                "operation": operation,
+                "sequence": sequence,
+                "user": user,
+                "length": length,
+                "payload": payload
+            }
+        except Exception as e:
+            print(f"Error parsing datagram: {e}")
+            return None
 
     def get_message_type(self, message):
         """
@@ -162,7 +171,6 @@ class SimpProtocol:
         elif type_byte == 2:
             return HeaderType.CHAT
         return HeaderType.UNKNOWN
-
 
     def get_operation(self, message, header_type):
         """
@@ -183,8 +191,9 @@ class SimpProtocol:
                 return Operation.ACK
             elif operation_byte == 8:
                 return Operation.FIN
+            elif operation_byte == 6:
+                return Operation.SYN_ACK
 
-    # not sure if we need this
     def get_sequence_number(self, message):
         """
             Extracts the sequence number from the message
@@ -192,7 +201,7 @@ class SimpProtocol:
             :return: The sequence number
         """
         seq_num = int(message[2])  # 00 or 01
-
+        return seq_num
 
     def get_payload_size(self, message):
         """
@@ -200,22 +209,5 @@ class SimpProtocol:
             :param message: The received message
             :return: The payload size
         """
-        payload_size = message[1:MAX_HEADER_SIZE]
+        payload_size = message[35:39]  # extract the payload size from the header (4 bytes)
         return int.from_bytes(payload_size, byteorder='big')
-
-
-
-
-
-# not sure we need this
-class SeqNum:
-    SEQ_0 = 0
-    SEQ_1 = 1
-
-    def to_bytes(self):
-        if self == SeqNum.SEQ_0:
-            return int(0).to_bytes(1, byteorder='big')
-        elif self == SeqNum.SEQ_1:
-            return int(1).to_bytes(1, byteorder='big')
-
-

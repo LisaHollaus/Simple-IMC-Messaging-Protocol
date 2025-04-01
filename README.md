@@ -1,7 +1,15 @@
 # Final Assignment 
 #### Authors: Hollaus, Meseli
 
-## How to run the application
+A UDP based client-daemon communication Protocol.
+Detailed description of the project can be found in the [Documentation.docx](Documentation.docx) file.
+
+But here is a short overview on how to run the project:
+
+### Preparations
+- activate the virtual environment
+- install requirements.txt
+
 ### Start the daemon:
 In order to start the daemon, run the following command in the terminal:
 python simp_daemon.py <IP address>
@@ -26,26 +34,9 @@ python simp_client.py 127.0.0.1
 3. If there are other users you can connect to them, otherwise you have to wait for another user to connect to you
 4. The other user can accept or decline the connection request 
 5. If the connection request is accepted you can start chatting with the other user 
-6. quit the chat by typing q in the message field
+6. quit the chat by typing "q" in the message field
 
 
-### Protocol between client and daemon:
-We implemented a simple protocol between the client and the daemon, based on a simple text-based format.
-
-The protocol defines following operations:
-
-- Ping: Check if the daemon is alive. 
-- Connect: Establish a connection between the client and the daemon.
-- Connecting: The daemon is connecting to another daemon (chat partner).
-- Chat: Send chat messages from the client to the daemon. 
-- Quit: Disconnect the client from the daemon. 
-- ERROR: Send an error message from the daemon to the client.
-
-Each message will have a simple format: OPERATION|PAYLOAD
-
-- Operation: A short string to define the type of request (CONNECT, CHAT, QUIT).
-- Payload: Optional additional data (e.g., username, chat message).
-
-### Additional Notes on our implementation approach:
-- We added a checksum to the protocol to ensure the integrity of the messages between daemon and daemon.
-- We assumed the client knows the IP address of the users daemon he wants to connect to, so we did not implement a discovery mechanism (example: Database).
+### Additional note from the authors:
+The project is not fully functional yet. The connection between the clients is established, but the chat messages in the end seem to be echoing and therefore resulting in an invalid sequence number. 
+Sadly, we were not able to fix this issue in time, but we are still working on it for our own learning purposes and hope to fix it soon.
